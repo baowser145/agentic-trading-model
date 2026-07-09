@@ -518,7 +518,7 @@ comparisons risk reduced, not eliminated; (3) worst-case single-trade risk staye
 Full-project code review applied, all items user-approved ("knock out all"):
 1. **git repo initialized** (biggest gap: no version control at all). Baseline commit = pre-review
    state; fixes committed on top as a reviewable diff. `.env` and `backtest/cache/` excluded via
-   the existing .gitignore. NOT pushed to any remote yet — local only.
+   the existing .gitignore. Pushed 2026-07-09 to private remote https://github.com/baowser145/robinhood-scanner (webhook stays only in gitignored config/.env — verified absent from all tracked files before pushing).
 2. **strategies.py refactor**: new `qualifying_gap()` is the single source of gap math (gap_scan
    and earnings_gap_pead_entry both delegate); new `earnings_window_ok(days_since_earnings)`;
    `is_earnings_gap` param renamed `max_days_before` -> `max_days_after` (the old name said the
