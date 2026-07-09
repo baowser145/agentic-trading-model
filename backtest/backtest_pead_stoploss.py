@@ -18,6 +18,8 @@ import pandas as pd
 from scipy import stats
 
 CACHE_DIR = Path(__file__).parent / "cache"
+RESULTS_DIR = Path(__file__).parent / "results"  # analysis outputs, tracked in git (cache/ is not)
+RESULTS_DIR.mkdir(exist_ok=True)
 SLIPPAGE_BPS = 5.0
 GAP_PCT_MIN = 5.0
 PRICE_MIN = 3.0
@@ -117,5 +119,5 @@ print(f"{'Variant':<20} {'Trades':>7} {'StoppedOut':>10} {'Mean/trade':>11} {'St
 for label, r in results.items():
     print(f"{label:<20} {r['n_trades']:>7} {r['stopped_out']:>10} {r['mean_return']:>10.3%} {r['std_return']:>7.2%} {r['win_rate']:>7.1%} {r['worst_trade']:>7.2%} {r['p_value']:>9.5f}")
 
-with open(CACHE_DIR / "pead_stoploss_results.json", "w") as f:
+with open(RESULTS_DIR / "pead_stoploss_results.json", "w") as f:
     json.dump({k: {kk: (vv if not isinstance(vv, (np.floating, np.integer)) else float(vv)) for kk, vv in v.items()} for k, v in results.items()}, f, indent=2)

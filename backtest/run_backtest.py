@@ -49,6 +49,10 @@ def max_drawdown(equity_curve: np.ndarray) -> float:
 
 
 def simulate_gap_scan(df: pd.DataFrame, test_start_idx: int):
+    # Known look-ahead: the price/volume filters use the day's CLOSE and full-day volume, neither
+    # knowable at the open when a live gap trade would be entered. This flatters the simulated
+    # results relative to reality. Left as-is because the strategy failed its gate anyway
+    # (report_sp500.md) and is not live — fix before ever reviving it.
     trades = []
     params = GapScanParams()
     for i in range(test_start_idx, len(df)):

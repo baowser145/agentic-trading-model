@@ -12,6 +12,8 @@ import pandas as pd
 from scipy import stats
 
 CACHE_DIR = Path(__file__).parent / "cache"
+RESULTS_DIR = Path(__file__).parent / "results"  # analysis outputs, tracked in git (cache/ is not)
+RESULTS_DIR.mkdir(exist_ok=True)
 SLIPPAGE_BPS = 5.0
 GAP_PCT_MIN = 5.0
 PRICE_MIN = 3.0
@@ -107,7 +109,7 @@ if n > 0:
         print(f"\n{label}: n={len(sub)} mean={sub.mean():.4%} win_rate={(sub > 0).mean():.1%} "
               f"worst={sub.min():.4%} best={sub.max():.4%} p={p_sub:.5f}")
 
-with open(CACHE_DIR / "pead_oos_2022_2024_results.json", "w") as f:
+with open(RESULTS_DIR / "pead_oos_2022_2024_results.json", "w") as f:
     json.dump({
         "n_trades": n,
         "n_tickers": len(per_ticker_returns),
@@ -118,4 +120,4 @@ with open(CACHE_DIR / "pead_oos_2022_2024_results.json", "w") as f:
         "worst": float(trade_returns.min()) if n else None,
         "best": float(trade_returns.max()) if n else None,
     }, f, indent=2)
-print("\nSaved summary to cache/pead_oos_2022_2024_results.json")
+print("\nSaved summary to results/pead_oos_2022_2024_results.json")

@@ -16,6 +16,8 @@ import pandas as pd
 from scipy import stats
 
 CACHE_DIR = Path(__file__).parent / "cache"
+RESULTS_DIR = Path(__file__).parent / "results"  # analysis outputs, tracked in git (cache/ is not)
+RESULTS_DIR.mkdir(exist_ok=True)
 SLIPPAGE_BPS = 5.0
 PRICE_MIN = 3.0
 VOLUME_MIN = 500_000
@@ -147,6 +149,6 @@ for lead_days in LEAD_DAYS_VARIANTS:
               f"std={s['std_return']:>6.2%} win={s['win_rate']:>5.1%} worst={s['worst']:>7.2%} best={s['best']:>7.2%} p={s['p_value']:.2e}")
     print()
 
-with open(CACHE_DIR / "pre_earnings_all_us_results.json", "w") as f:
+with open(RESULTS_DIR / "pre_earnings_all_us_results.json", "w") as f:
     json.dump(results, f, indent=2)
-print("Saved to cache/pre_earnings_all_us_results.json")
+print("Saved to results/pre_earnings_all_us_results.json")

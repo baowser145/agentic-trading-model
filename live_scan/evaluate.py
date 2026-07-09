@@ -25,7 +25,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "backtest"))
 from strategies import (  # noqa: E402
     EarningsGapPeadParams,
     earnings_gap_pead_exit_due,
+    earnings_window_ok,
     gap_scan,
+    qualifying_gap,
     trend_join_long,
 )
 
@@ -78,18 +80,11 @@ def main():
         )
         print(f"{args.ticker}: trend_join_long hit={hit}")
     elif args.strategy == "pead-entry":
-        params = EarningsGapPeadParams()
-        if args.prev_close <= 0:
-            gap_pct = 0.0
-            qualifies = False
-        else:
-            gap_pct = (args.open - args.prev_close) / args.prev_close * 100
-            qualifies = (
-                gap_pct >= params.gap_pct_min
-                and args.price >= params.price_min
-                and args.volume >= params.volume_min
-            )
-        is_earnings_window = 0 <= args.days_since_earnings <= 3
+        # Same code path as the backtest (strategies.qualifying_gap) — no math re-derived here.
+        qualifies, gap_pct = qualifying_gap(
+            args.open, args.prev_close, args.price, args.volume, EarningsGapPeadParams()
+        )
+        is_earnings_window = earnings_window_ok(args.days_since_earnings)
         hit = qualifies and is_earnings_window
         print(f"{args.ticker}: pead_entry hit={hit} gap_pct={gap_pct:.2f}% qualifies_gap={qualifies} is_earnings_window={is_earnings_window}")
     elif args.strategy == "pead-exit":

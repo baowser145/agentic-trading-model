@@ -1,0 +1,52 @@
+{
+  "No stop (baseline)": {
+    "n_trades": 615,
+    "stopped_out": 0,
+    "mean_return": 0.017015712161226604,
+    "std_return": 0.11232092654306791,
+    "win_rate": 0.5577235772357724,
+    "worst_trade": -0.37954950467059806,
+    "p_value": 0.00018843686313313208,
+    "per_ticker_avg_total": 0.032199237675473
+  },
+  "-5% stop": {
+    "n_trades": 615,
+    "stopped_out": 329,
+    "mean_return": 0.008398474934149103,
+    "std_return": 0.08962421449090047,
+    "win_rate": 0.4,
+    "worst_trade": -0.051000000000000136,
+    "p_value": 0.020457727614283914,
+    "per_ticker_avg_total": 0.017144104517898752
+  },
+  "-8% stop": {
+    "n_trades": 615,
+    "stopped_out": 210,
+    "mean_return": 0.010772525632629959,
+    "std_return": 0.09953179780007551,
+    "win_rate": 0.49105691056910566,
+    "worst_trade": -0.08100000000000006,
+    "p_value": 0.007469484345931337,
+    "per_ticker_avg_total": 0.02126562166002676
+  },
+  "-10% stop": {
+    "n_trades": 615,
+    "stopped_out": 148,
+    "mean_return": 0.01271108960279345,
+    "std_return": 0.10274880252698324,
+    "win_rate": 0.5219512195121951,
+    "worst_trade": -0.10100000000000006,
+    "p_value": 0.0022505028976949476,
+    "per_ticker_avg_total": 0.02440925449729586
+  },
+  "-15% stop": {
+    "n_trades": 615,
+    "stopped_out": 72,
+    "mean_return": 0.015194851845659758,
+    "std_return": 0.10979917030315306,
+    "win_rate": 0.5479674796747968,
+    "worst_trade": -0.1510000000000001,
+    "p_value": 0.0006396364990238401,
+    "per_ticker_avg_total": 0.03071958307022257
+  }
+}

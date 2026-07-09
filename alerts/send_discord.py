@@ -11,11 +11,30 @@ cloud routine embeds the URL directly since it can't read local files).
 
 import os
 import sys
+import time
 
 import requests
 
 
 DISCORD_MAX_LEN = 2000
+INTER_CHUNK_DELAY_SECONDS = 0.5
+MAX_ATTEMPTS_PER_CHUNK = 5
+
+
+def post_chunk(webhook_url, chunk):
+    """POST one message, honoring Discord's rate limiting. Webhooks get 429 + Retry-After under
+    burst; without this, a 429 on chunk 2 of 3 would crash the script and silently drop the rest
+    of the alert — the same partial-delivery failure mode the paragraph-splitting fix was meant
+    to eliminate."""
+    for attempt in range(MAX_ATTEMPTS_PER_CHUNK):
+        resp = requests.post(webhook_url, json={"content": chunk}, timeout=15)
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return
+        retry_after = float(resp.headers.get("Retry-After", 1.0))
+        # Retry-After is seconds (may be fractional); cap so a weird header can't hang the cron run
+        time.sleep(min(retry_after, 30.0))
+    raise RuntimeError(f"Discord kept rate-limiting after {MAX_ATTEMPTS_PER_CHUNK} attempts")
 
 
 def split_message(message, max_len=DISCORD_MAX_LEN):
@@ -64,8 +83,9 @@ def main():
 
     chunks = split_message(message)
     for i, chunk in enumerate(chunks):
-        resp = requests.post(webhook_url, json={"content": chunk}, timeout=15)
-        resp.raise_for_status()
+        if i > 0:
+            time.sleep(INTER_CHUNK_DELAY_SECONDS)
+        post_chunk(webhook_url, chunk)
     print(f"Sent ({len(chunks)} message{'s' if len(chunks) != 1 else ''}).")
 
 

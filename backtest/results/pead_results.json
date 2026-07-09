@@ -1,0 +1,19 @@
+{
+  "earnings_bucket_n_tickers": 145,
+  "earnings_bucket_total_trades": 172,
+  "non_earnings_bucket_n_tickers": 130,
+  "non_earnings_bucket_total_trades": 265,
+  "pead_bucket_n_tickers": 145,
+  "pead_bucket_total_trades": 172,
+  "eg_avg_total_return": 0.007559201101055691,
+  "eg_avg_expectancy": 0.0037696893670635346,
+  "neg_avg_total_return": -0.008239411850465377,
+  "neg_avg_expectancy": -0.006152770942813884,
+  "pead_avg_total_return": 0.00541040728513486,
+  "pead_avg_expectancy": 0.0006911870111685559,
+  "avg_buy_hold": 0.17013151996978576,
+  "window": [
+    "2025-11-01",
+    "2026-06-04"
+  ]
+}

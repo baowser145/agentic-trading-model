@@ -15,6 +15,8 @@ import pandas as pd
 from scipy import stats
 
 CACHE_DIR = Path(__file__).parent / "cache"
+RESULTS_DIR = Path(__file__).parent / "results"  # analysis outputs, tracked in git (cache/ is not)
+RESULTS_DIR.mkdir(exist_ok=True)
 SLIPPAGE_BPS = 5.0
 TEST_START = pd.Timestamp("2024-07-06")
 TEST_END = pd.Timestamp("2026-07-06")
@@ -118,6 +120,6 @@ print(f"{'Lead days':>10} {'Samples':>9} {'Mean/period':>12} {'Std':>8} {'WinRat
 for lead_days, r in results_by_variant.items():
     print(f"{lead_days:>10} {r['n_control_samples']:>9} {r['mean_return']:>11.3%} {r['std_return']:>7.2%} {r['win_rate']:>7.1%}")
 
-with open(CACHE_DIR / "pre_earnings_control_results.json", "w") as f:
+with open(RESULTS_DIR / "pre_earnings_control_results.json", "w") as f:
     json.dump(results_by_variant, f, indent=2)
-print("\nSaved to cache/pre_earnings_control_results.json")
+print("\nSaved to results/pre_earnings_control_results.json")

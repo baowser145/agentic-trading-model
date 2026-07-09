@@ -12,6 +12,8 @@ import pandas as pd
 from scipy import stats
 
 CACHE_DIR = Path(__file__).parent / "cache"
+RESULTS_DIR = Path(__file__).parent / "results"  # analysis outputs, tracked in git (cache/ is not)
+RESULTS_DIR.mkdir(exist_ok=True)
 SLIPPAGE_BPS = 5.0
 GAP_PCT_MIN = 5.0
 PRICE_MIN = 3.0
@@ -137,7 +139,7 @@ print(non_sp500_summary)
 print("\n=== Combined (full universe) ===")
 print(combined_summary)
 
-with open(CACHE_DIR / "pead_all_us_results.json", "w") as f:
+with open(RESULTS_DIR / "pead_all_us_results.json", "w") as f:
     def clean(d):
         if d is None:
             return None
@@ -148,4 +150,4 @@ with open(CACHE_DIR / "pead_all_us_results.json", "w") as f:
         "combined": clean(combined_summary),
     }, f, indent=2)
 
-print("\nSaved to cache/pead_all_us_results.json")
+print("\nSaved to results/pead_all_us_results.json")

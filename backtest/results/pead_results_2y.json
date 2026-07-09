@@ -1,0 +1,17 @@
+{
+  "eg_n_tickers": 291,
+  "eg_n_trades": 559,
+  "neg_n_tickers": 260,
+  "neg_n_trades": 902,
+  "pead_n_tickers": 289,
+  "pead_n_trades": 555,
+  "eg_avg_total": -0.0024167823909840846,
+  "eg_avg_exp": -0.0008789526074510904,
+  "neg_avg_total": -0.018716663602598528,
+  "neg_avg_exp": -0.007041799727210093,
+  "pead_avg_total": 0.026892679944304165,
+  "pead_avg_exp": 0.01364131528877715,
+  "eg_ttest_p": 0.4539660253707042,
+  "diff_ttest_p": 0.061581678345375965,
+  "avg_buy_hold": 0.5951646704981138
+}

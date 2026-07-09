@@ -512,3 +512,47 @@ Caveats NOT resolved by this test: (1) survivorship bias -- used today's S&P 500
 2022-2024 historical period; (2) this is now 2 of ~6-7 total strategy variants screened -- multiple-
 comparisons risk reduced, not eliminated; (3) worst-case single-trade risk stayed large (-31% to
 -38%), consistent with the earlier stop-loss finding -- position sizing still matters a lot.
+
+## Update 2026-07-09 (code review fixes: git, tests, staleness, dedup, rate limits)
+
+Full-project code review applied, all items user-approved ("knock out all"):
+1. **git repo initialized** (biggest gap: no version control at all). Baseline commit = pre-review
+   state; fixes committed on top as a reviewable diff. `.env` and `backtest/cache/` excluded via
+   the existing .gitignore. NOT pushed to any remote yet — local only.
+2. **strategies.py refactor**: new `qualifying_gap()` is the single source of gap math (gap_scan
+   and earnings_gap_pead_entry both delegate); new `earnings_window_ok(days_since_earnings)`;
+   `is_earnings_gap` param renamed `max_days_before` -> `max_days_after` (the old name said the
+   opposite of what it measured). PEAD docstring updated to reflect the 2022-2024 out-of-sample
+   validation (it still claimed OOS hadn't been done).
+3. **live_scan/evaluate.py**: pead-entry no longer re-implements the gap math inline — calls
+   qualifying_gap/earnings_window_ok. CLI args and output format byte-identical (verified), so the
+   cron job prompts need no changes.
+4. **rank_pre_earnings_candidates.py**: TEST_START/TEST_END no longer frozen at 2024-07-06/
+   2026-07-06 — now a rolling 2y window ending today (was silently ossifying the daily alert's
+   "own history" stats). Prints loud WARNINGs when sp500_earnings_dates_2y.json (>14d) or the price
+   CSVs (>7d) go stale, with refresh instructions. Output now also prints a STATISTICAL CAVEAT
+   (75% win-rate bar on n~8 = ~14% false-positive rate per no-edge ticker; pooled edge is the
+   validated result, not per-ticker records) that the cron LLM is told to reflect in alerts.
+   Verified: same top-10 as 2026-07-07/08 runs, so no behavior change today.
+5. **alerts/send_discord.py**: handles Discord 429 rate limits (Retry-After honored, capped 30s,
+   max 5 attempts/chunk, 0.5s between chunks). Previously a 429 mid-multi-chunk-send would crash
+   and silently drop the rest of the alert.
+6. **Tests + requirements.txt added**: tests/ (33 tests, all passing) covering gap math boundaries,
+   earnings-window edges (day 0/3/4/negative), PEAD entry/exit, trend conditions, message
+   chunking, and 429 retry logic (mocked, no network). requirements.txt pins pandas/numpy/scipy/
+   yfinance/requests/pytest.
+7. **cache/ vs results/ split**: one-off analysis outputs (pead_*_results.json,
+   pre_earnings_*_results.json, full_condition_*, sample_hits, two_condition_hits, etc.) moved to
+   backtest/results/ (git-tracked; they're the findings the reports cite). backtest/cache/ now
+   holds only untracked input data. All 7 writer scripts updated; verify_pead_oos_2022_2024.py
+   re-run end-to-end to confirm (numbers matched the documented result exactly). NOTE: older
+   report/PROJECT.md entries still say "cache/<x>_results.json" — those are historical records,
+   left as written; the files now live in results/.
+8. **run_backtest.py**: comment added documenting the gap_scan simulation's known look-ahead
+   (filters on full-day close/volume not knowable at the open) — moot while the strategy is dead,
+   must be fixed before ever reviving it.
+
+Not done (flagged, needs separate investigation): durable scheduling. Both daily jobs still live
+in a local Claude Code session (die on close, 7-day expiry). Option B from 2026-07-07 (Discord MCP
+connector attached to the cloud routine) checked against the MCP registry this session — see
+conversation for outcome.

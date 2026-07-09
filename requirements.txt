@@ -1,0 +1,9 @@
+# Runtime
+pandas>=2.2
+numpy>=1.26
+scipy>=1.15
+yfinance>=1.5
+requests>=2.32
+
+# Dev / tests
+pytest>=8
