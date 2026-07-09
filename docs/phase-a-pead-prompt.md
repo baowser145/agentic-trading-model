@@ -1,17 +1,18 @@
 # Phase A — Earnings-Gap PEAD Daily Check
 
 **Strategy being alerted on**: the earnings-gap + 20-trading-day-hold strategy validated in
-`backtest/report_pead_earnings_gap.md` (+1.47%/trade net of slippage, 555 trades, p=0.0013 over a
-2-year full-S&P-500 backtest; independently re-verified from scratch with a different implementation,
-615 trades, p=0.00019 — see `.claude/PROJECT.md` "independent verification" update). This is the
-first strategy in this project with a statistically significant edge.
+`backtest/report_pead_earnings_gap.md` (in-sample 2024-2026: +1.70%/trade net of slippage, 615
+trades, p=0.00019, independently re-verified from scratch) and OUT-OF-SAMPLE in
+`backtest/report_pead_out_of_sample_2022_2024.md` (2022-2024: +3.57%/trade, 500 trades, p<0.00001;
+weakest sub-period, the 2022-23 bear/recovery, still +1.69%/trade, p=0.025). This is the only
+strategy in this project with a statistically significant edge.
 
 **Mandatory caveat — every single alert must include this, verbatim, no exceptions:**
-> ⚠️ This strategy has a statistically significant backtested edge (p=0.0013, independently
-> reproduced) but has NOT been validated out-of-sample on a market period different from the one it
-> was found in (2024-2026, a strong bull market). Roughly 6-7 other strategy variants were tested and
-> rejected this project before this one passed — treat with appropriate caution about
-> multiple-comparisons risk. This is informational only; manual approval required for any trade.
+> ⚠️ Backtested edge validated in-sample (2024-2026: +1.70%/trade, p=0.00019) and out-of-sample
+> (2022-2024: +3.57%/trade, p<0.00001). Remaining caveats: survivorship bias (today's S&P 500 list
+> applied to historical periods) and large single-trade tail risk (worst historical trade -38%; no
+> stop-loss — stops were backtested and made results worse). This is informational only; manual
+> approval required for any trade.
 
 **This pipeline never places or reviews orders.** Do not call `place_equity_order`,
 `review_equity_order`, `place_option_order`, `review_option_order`, or any similar tool, under any
@@ -80,7 +81,10 @@ For each ticker with an earnings report ~20 trading days ago (from the widened w
 
 ## Step 4 — Compose and send ONE Discord message
 
-Use `alerts/send_discord.py` (webhook URL is embedded in this routine's environment).
+Use `alerts/send_discord.py`. When running locally (the current setup — a local cron job in a
+Claude Code session at the repo root), load the webhook first:
+`export $(grep -v '^#' config/.env | xargs)` or pass it inline:
+`DISCORD_WEBHOOK_URL=$(grep DISCORD_WEBHOOK_URL config/.env | cut -d= -f2-) python3 alerts/send_discord.py ...`
 
 No stop-loss and no projected-exit price (backtested in `backtest_pead_stoploss.py`: every stop
 level tested REDUCED expectancy vs. no stop -- e.g. a -5% stop nearly halved the mean return and
@@ -100,7 +104,7 @@ ENTRY SIGNALS (consider buying at next open, plan to hold ~20 trading days, exit
 🟢 <TICKER> — gapped <X>% (reported <earnings date>, <AM/PM>)
 💰 Current Price: $<price>
 🛒 Suggested Buy: ~$<price> (next open)
-📊 Backtested: 55.3% win rate, p=0.0013 (not out-of-sample validated)
+📊 Backtested: 55.8% win rate in-sample / 60.8% out-of-sample (p=0.00019 / p<0.00001)
 
 (or "No entry signals today.")
 

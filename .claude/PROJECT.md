@@ -556,3 +556,28 @@ Not done (flagged, needs separate investigation): durable scheduling. Both daily
 in a local Claude Code session (die on close, 7-day expiry). Option B from 2026-07-07 (Discord MCP
 connector attached to the cloud routine) checked against the MCP registry this session — see
 conversation for outcome.
+
+## Update 2026-07-09 (schedule found dead; both cron jobs recreated in new session)
+
+User asked whether the daily schedule still runs. Checked rather than assumed: CronList in this
+session = empty, and list_sessions shows NO other sessions exist — the session hosting both local
+cron jobs (eb540aa4 PEAD 3:15pm, bea429c1 pre-earnings 7:33am) is gone, so **both jobs died with
+it**. Last confirmed runs were 2026-07-08. The cloud routine remains disabled (can't reach
+Discord). Net: nothing was scheduled anywhere until now.
+
+Fixed in this session:
+- `docs/pre-earnings-screen-prompt.md` CREATED — the morning screen's instructions previously
+  lived only inside the dead cron job (single point of failure); reconstructed the full procedure
+  (S&P-500 filter, ranking script + its warnings, option budget/liquidity/delta rules, 5-line
+  card format, bid/ask note, hard no-order constraints) from this file's 2026-07-07/08 entries.
+  Cron prompts now POINT at the docs instead of embedding the only copy.
+- `docs/phase-a-pead-prompt.md` updated: mandatory caveat block was stale (still said "NOT
+  validated out-of-sample" — the 2026-07-08 OOS test resolved that). New verbatim caveat cites
+  in-sample + OOS numbers and the remaining real caveats (survivorship bias, -38% tail risk, no
+  stop by design). Also documented loading the webhook from config/.env for local runs.
+- New cron jobs (this session): `cab71a2e` pre-earnings screen weekdays 7:33am, `0d224b40` PEAD
+  check weekdays 3:15pm. Same limitations as before: session must stay open, 7-day auto-expiry
+  (~2026-07-16), then recreate.
+
+Position note for the PEAD job: SJM (entered 2026-06-09) was 19/20 trading days on 2026-07-08 —
+likely EXIT-DUE at today's 3:15pm run. CASY (entered 2026-06-10) likely due 2026-07-10.
