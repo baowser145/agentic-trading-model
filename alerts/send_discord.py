@@ -66,6 +66,18 @@ def split_message(message, max_len=DISCORD_MAX_LEN):
     return chunks
 
 
+def send_message(webhook_url, message):
+    """Split + post a full alert; returns the number of Discord messages sent. Importable so the
+    scheduled scan scripts (live_scan/daily_*.py) reuse the chunking/429 handling instead of
+    shelling out to this file."""
+    chunks = split_message(message)
+    for i, chunk in enumerate(chunks):
+        if i > 0:
+            time.sleep(INTER_CHUNK_DELAY_SECONDS)
+        post_chunk(webhook_url, chunk)
+    return len(chunks)
+
+
 def main():
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook_url:
@@ -81,12 +93,8 @@ def main():
         print("No message provided", file=sys.stderr)
         sys.exit(1)
 
-    chunks = split_message(message)
-    for i, chunk in enumerate(chunks):
-        if i > 0:
-            time.sleep(INTER_CHUNK_DELAY_SECONDS)
-        post_chunk(webhook_url, chunk)
-    print(f"Sent ({len(chunks)} message{'s' if len(chunks) != 1 else ''}).")
+    n = send_message(webhook_url, message)
+    print(f"Sent ({n} message{'s' if n != 1 else ''}).")
 
 
 if __name__ == "__main__":

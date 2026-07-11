@@ -1,5 +1,11 @@
 # Phase A — Earnings-Gap PEAD Daily Check
 
+> **Automation status (2026-07-10):** this doc is now implemented by
+> `live_scan/daily_pead_check.py`, scheduled via GitHub Actions
+> (`.github/workflows/daily-scans.yml`, 21:15 UTC weekdays). This doc remains the behavioral
+> spec; change the doc and the script together. The script uses yfinance instead of the Robinhood
+> MCP tools referenced below and has no brokerage access at all.
+
 **Strategy being alerted on**: the earnings-gap + 20-trading-day-hold strategy validated in
 `backtest/report_pead_earnings_gap.md` (in-sample 2024-2026: +1.70%/trade net of slippage, 615
 trades, p=0.00019, independently re-verified from scratch) and OUT-OF-SAMPLE in

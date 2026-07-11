@@ -581,3 +581,49 @@ Fixed in this session:
 
 Position note for the PEAD job: SJM (entered 2026-06-09) was 19/20 trading days on 2026-07-08 —
 likely EXIT-DUE at today's 3:15pm run. CASY (entered 2026-06-10) likely due 2026-07-10.
+
+## Update 2026-07-10 (schedule found dead AGAIN; replaced with GitHub Actions — durable)
+
+The 2026-07-09 recreated cron jobs (cab71a2e, 0d224b40) died the same way as their predecessors:
+the hosting session no longer exists (list_sessions shows only unrelated MLB sessions). Today's
+7:33am screen never fired; 2026-07-09 3:15pm PEAD run (SJM exit-due day) likely missed too. This
+was the second session-death in three days — session-hosted cron was abandoned entirely.
+
+**New architecture: both daily jobs are now plain Python scripts scheduled by GitHub Actions**
+(`.github/workflows/daily-scans.yml`, cron on the private GitHub repo). No Claude session, no
+Robinhood MCP, no local machine involvement. The prompt docs remain the behavioral spec; the
+scripts implement them:
+
+- `live_scan/market_data.py` — free-data layer replacing the Robinhood MCP tools: yfinance for
+  bars/quotes/option chains/historical earnings dates, Alpha Vantage EARNINGS_CALENDAR (free key,
+  1 call/day) for the upcoming calendar, Black-Scholes delta computed from chain IV (yfinance has
+  no greeks; flat 4% risk-free — immaterial at these maturities). Read-only market data; the
+  scripts have NO brokerage access of any kind, making the no-order constraint structural.
+- `live_scan/daily_pead_check.py` (21:15 UTC weekdays = after close in both DST regimes) —
+  implements docs/phase-a-pead-prompt.md. Funnel inverted vs. the doc: gap-scan all S&P 500 bars
+  first (one batched download), confirm earnings window per-gapper via yfinance — this removes the
+  need for any historical earnings-calendar API. Verbatim caveat block preserved. SPY bar presence
+  = market-open check (holidays send a "market closed" alive message).
+- `live_scan/daily_pre_earnings_screen.py` (12:15 UTC weekdays = premarket in both regimes) —
+  implements docs/pre-earnings-screen-prompt.md. Writes the two cache JSONs in the exact format
+  `rank_pre_earnings_candidates.py` expects and runs that script UNMODIFIED (quality filter stays
+  in one place), then option picks per the $300/bid>0/delta>=0.15 rules with computed delta.
+- `alerts/send_discord.py` gained an importable `send_message()`; scripts reuse its chunking/429
+  handling. Workflow has a `workflow_dispatch` manual trigger (job selector + dry_run flag,
+  dry_run defaults true) and posts a ❌ Discord notification if a run fails.
+
+Verified 2026-07-10 locally: 56/56 tests pass (new offline tests for delta math, chain selection,
+gap scan, message composition); PEAD dry-run against live data independently reproduced the
+predicted CASY exit signal (entered 2026-06-10, 20 trading days → exit due 2026-07-10, ~$819.83);
+screen dry-run with a synthetic calendar produced correct cards end-to-end (ranker → quotes →
+real option chains → delta → stock-only fallbacks).
+
+Remaining setup (user, one-time): create free Alpha Vantage key; `gh secret set
+DISCORD_WEBHOOK_URL` and `gh secret set ALPHAVANTAGE_API_KEY` on the repo; test via
+workflow_dispatch. Known platform caveats: GitHub cron can drift ~15-30 min (schedule margins
+absorb it); schedules auto-disable after ~60 days of NO repo activity (any commit resets; the
+missing daily Discord message is the tell); the daily "alive" message doubles as the health check.
+
+Position note: SJM's exit alert (due 2026-07-09) was never sent — user should review manually.
+CASY's exit fired correctly in the 2026-07-10 dry run but no live alert went out (secrets not yet
+set); user notified in-session.

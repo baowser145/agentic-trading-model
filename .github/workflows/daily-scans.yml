@@ -1,0 +1,89 @@
+# Durable scheduling for the two daily scans (replaces the session-hosted Claude cron jobs that
+# died whenever their session closed — 2026-07-09 and 2026-07-10 incidents in .claude/PROJECT.md).
+#
+# Cron times are UTC (GitHub requirement) and chosen to satisfy both DST regimes:
+#   12:15 UTC = 8:15am EDT / 7:15am EST  -> always premarket for the screen
+#   21:15 UTC = 5:15pm EDT / 4:15pm EST  -> always after the close for the PEAD check
+# GitHub may delay scheduled runs by up to ~15-30 min under load; both times have margin for that.
+#
+# Secrets required (Settings -> Secrets and variables -> Actions):
+#   DISCORD_WEBHOOK_URL   — the existing alert webhook
+#   ALPHAVANTAGE_API_KEY  — free key from https://www.alphavantage.co/support/#api-key
+#
+# NOTE: GitHub disables cron schedules after ~60 days without repo activity — any commit resets
+# the clock, and the failure/absence of the daily Discord message is the tell.
+
+name: daily-scans
+
+on:
+  schedule:
+    - cron: "15 12 * * 1-5" # pre-earnings screen (premarket)
+    - cron: "15 21 * * 1-5" # PEAD check (after close)
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which scan to run
+        type: choice
+        options: [both, screen, pead]
+        default: both
+      dry_run:
+        description: Print the alert instead of sending to Discord
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  pre-earnings-screen:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '15 12 * * 1-5') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'screen' || inputs.job == 'both'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run pre-earnings screen
+        run: python3 live_scan/daily_pre_earnings_screen.py ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '--dry-run' || '' }}
+      - name: Notify Discord on failure
+        if: failure()
+        run: |
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -sS -X POST -H 'Content-Type: application/json' \
+              -d "{\"content\":\"❌ Pre-earnings screen FAILED — the morning alert did not go out. Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "$DISCORD_WEBHOOK_URL"
+          fi
+
+  pead-check:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '15 21 * * 1-5') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'pead' || inputs.job == 'both'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run PEAD daily check
+        run: python3 live_scan/daily_pead_check.py ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '--dry-run' || '' }}
+      - name: Notify Discord on failure
+        if: failure()
+        run: |
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -sS -X POST -H 'Content-Type: application/json' \
+              -d "{\"content\":\"❌ PEAD daily check FAILED — the after-close alert did not go out. Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "$DISCORD_WEBHOOK_URL"
+          fi

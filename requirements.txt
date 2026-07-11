@@ -4,6 +4,7 @@ numpy>=1.26
 scipy>=1.15
 yfinance>=1.5
 requests>=2.32
+lxml>=5  # pd.read_html (S&P 500 list from Wikipedia) needs it; absent on fresh CI runners
 
 # Dev / tests
 pytest>=8

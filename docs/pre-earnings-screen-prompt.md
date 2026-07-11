@@ -4,6 +4,13 @@ Reconstructed 2026-07-09 from `.claude/PROJECT.md` change log (2026-07-07/08 upd
 original instructions — which lived only inside a session-local cron job — were lost when that
 session closed. This doc is now the canonical copy; any cron job should point here.
 
+> **Automation status (2026-07-10):** this doc is now implemented by
+> `live_scan/daily_pre_earnings_screen.py`, scheduled via GitHub Actions
+> (`.github/workflows/daily-scans.yml`, 12:15 UTC weekdays). This doc remains the behavioral
+> spec; change the doc and the script together. The script replaces the Robinhood MCP tools below
+> with Alpha Vantage (earnings calendar) + yfinance (quotes/chains, delta computed via
+> Black-Scholes) and has no brokerage access at all.
+
 **Strategy**: buy S&P 500 names ~18-30 days before their earnings report, sell the day before the
 report. Validated as an incremental edge over a random-entry control (~+0.7-1.1pp, peak at 18-30
 day lead; see `backtest/backtest_pre_earnings_timing.py` and
