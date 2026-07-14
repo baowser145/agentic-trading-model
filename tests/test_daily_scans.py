@@ -194,28 +194,30 @@ class TestScreenPieces:
         assert [c["ticker"] for c in cands] == ["AAPL", "MSFT"]
         assert all(c["verified"] is True and c["timing"] == "unknown" for c in cands)
 
-    def test_card_with_option_pick_and_buy_under(self):
+    def test_card_with_option_pick_is_four_clean_lines(self):
         row = pd.Series({"ticker": "AAPL", "report_date": "2026-07-30", "win_rate": 0.8})
         pick = {"strike": 215.0, "expiration": pd.Timestamp("2026-07-31"), "bid": 1.10, "ask": 1.25, "cost": 125.0, "delta": 0.22}
-        card = screen.compose_card(row, price=200.0, name="Apple Inc.", timing="pm", pick=pick, reason="")
-        assert card.startswith("🟢 AAPL — Apple Inc. (reports 2026-07-30 pm)")
-        assert "🛒 Buy Under: $198.00" in card
-        assert "📈 $215c exp 07/31 — Bid $1.10 / Ask $1.25 (buy = ask, $125/contract, delta 0.22)" in card
+        card = screen.compose_card(row, price=200.0, name="Apple Inc.", timing="pm", pick=pick)
+        assert card.splitlines() == [
+            "🟢 AAPL — Apple Inc. (reports 2026-07-30 pm)",
+            "💰 Current Price: $200.00",
+            "🛒 Buy Under: $198.00",
+            "📈 $215c exp 07/31 — Bid $1.10 / Ask $1.25",
+        ]
 
-    def test_stock_only_card_and_thin_bid_flag(self):
+    def test_card_without_pick_is_three_lines_no_option_chatter(self):
         row = pd.Series({"ticker": "MSFT", "report_date": "2026-08-05", "win_rate": 0.7})
-        card = screen.compose_card(row, 400.0, "Microsoft", "unknown", None, "too expensive even at deepest strike")
-        assert card.startswith("🟡 MSFT — Microsoft (reports 2026-08-05)")
-        assert "📈 Stock-only (too expensive even at deepest strike)" in card
+        card = screen.compose_card(row, 400.0, "Microsoft", "unknown", None)
+        assert card.splitlines() == [
+            "🟡 MSFT — Microsoft (reports 2026-08-05)",
+            "💰 Current Price: $400.00",
+            "🛒 Buy Under: $396.00",
+        ]
+        assert "📈" not in card and "Stock-only" not in card
 
-        thin_pick = {"strike": 500.0, "expiration": pd.Timestamp("2026-08-07"), "bid": 0.05, "ask": 0.15, "cost": 15.0, "delta": 0.16}
-        thin_card = screen.compose_card(row, 400.0, "Microsoft", "am", thin_pick, "")
-        assert "thin bid" in thin_card
-
-    def test_message_always_has_caveats_even_with_no_cards(self):
+    def test_message_always_has_footer_even_with_no_cards(self):
         msg = screen.compose_message([], self.TODAY, n_candidates=12, failed=["FOO"])
         assert "No qualifying candidates today" in msg
         assert "12 S&P 500 names" in msg
         assert "FOO" in msg
-        for line in screen.CAVEAT_LINES:
-            assert line in msg
+        assert screen.FOOTER in msg

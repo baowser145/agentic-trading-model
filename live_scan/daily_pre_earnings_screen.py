@@ -36,13 +36,14 @@ CACHE_DIR = ROOT / "backtest" / "cache"
 WINDOW_MIN_DAYS = 18
 WINDOW_MAX_DAYS = 30
 EARNINGS_FETCH_SLEEP_SECONDS = 0.25
-THIN_BID_DOLLARS = 0.10  # a sub-$0.10 bid is a token quote, not real liquidity — flag it
 
-CAVEAT_LINES = [
-    "⚠️ The stock backtest does not validate the options themselves (leverage/theta/IV never tested) — option quotes are real, but the strategy on options is unproven.",
-    "⚠️ Per-ticker win rates are tiny samples (~8 trades); expect lucky false positives — the validated result is the pooled 18-30-day pre-earnings edge (~+0.7-1.1pp over random entry), not any single ticker's record.",
-    "ℹ️ Robinhood's app shows the Bid by default on its Sell tab — our \"buy = ask\" number will look higher than the app's headline price.",
-]
+# Condensed 2026-07-13 at user request (was three paragraph-length caveats): cards only, one
+# compact reminder line at the bottom.
+FOOTER = (
+    "ℹ️ Options overlay unvalidated (stock backtest only) · per-ticker win rates are ~8-trade "
+    "samples, the pooled 18-30-day edge is the validated result · option buy price = ask "
+    "(Robinhood's headline shows the bid)"
+)
 
 
 def build_candidates(calendar: pd.DataFrame, sp500: list[str], today: pd.Timestamp) -> list[dict]:
@@ -122,7 +123,10 @@ def cached_close(ticker: str) -> float | None:
     return float(df["Close"].iloc[-1]) if len(df) else None
 
 
-def compose_card(row: pd.Series, price: float, name: str, timing: str, pick: dict | None, reason: str) -> str:
+def compose_card(row: pd.Series, price: float, name: str, timing: str, pick: dict | None) -> str:
+    """4 lines with an option pick, 3 lines without one (user preference 2026-07-13: no
+    'Stock-only (<reason>)' line, no per-contract cost/delta chatter — reasons still go to the
+    run log via pick_option_contract)."""
     emoji = "🟢" if row["win_rate"] >= 0.75 else "🟡"
     timing_str = f" {timing}" if timing != "unknown" else ""
     lines = [
@@ -131,13 +135,7 @@ def compose_card(row: pd.Series, price: float, name: str, timing: str, pick: dic
         f"🛒 Buy Under: ${price * 0.99:,.2f}",
     ]
     if pick:
-        thin = " — thin bid, quote may be stale" if pick["bid"] < THIN_BID_DOLLARS else ""
-        lines.append(
-            f"📈 ${pick['strike']:g}c exp {pick['expiration']:%m/%d} — Bid ${pick['bid']:.2f} / Ask ${pick['ask']:.2f} "
-            f"(buy = ask, ${pick['cost']:.0f}/contract, delta {pick['delta']:.2f}){thin}"
-        )
-    else:
-        lines.append(f"📈 Stock-only ({reason})")
+        lines.append(f"📈 ${pick['strike']:g}c exp {pick['expiration']:%m/%d} — Bid ${pick['bid']:.2f} / Ask ${pick['ask']:.2f}")
     return "\n".join(lines)
 
 
@@ -153,7 +151,7 @@ def compose_message(cards: list[str], today: pd.Timestamp, n_candidates: int, fa
         )
     if failed:
         parts.append(f"Data note: {len(failed)} candidate(s) skipped for missing price/earnings history: {', '.join(failed[:10])}{'...' if len(failed) > 10 else ''}")
-    parts.extend(CAVEAT_LINES)
+    parts.append(FOOTER)
     return "\n\n".join(parts)
 
 
@@ -206,7 +204,9 @@ def main():
             name = md.company_name(ticker)
             timing = timing_for(ticker, report_date, timestamps_by_ticker)
             pick, reason = md.pick_option_contract(ticker, price, report_date, today)
-            cards.append(compose_card(row, price, name, timing, pick, reason))
+            if not pick:
+                print(f"  {ticker}: no option pick — {reason}")  # reason lives in the run log now, not the alert
+            cards.append(compose_card(row, price, name, timing, pick))
 
     message = compose_message(cards, today, len(candidates), failed)
     print(f"\n{len(cards)} card(s) composed from {len(candidates)} candidates.")

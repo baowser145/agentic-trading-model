@@ -54,7 +54,7 @@ Run from the repo root (`/Users/vubl/projects/robinhood-scanner`).
    🟢 TICKER — Company Name (reports YYYY-MM-DD am/pm)
    💰 Current Price: $X.XX
    🛒 Buy Under: $X.XX
-   📈 $STRIKEc exp MM/DD — Bid $X.XX / Ask $Y.YY (buy = ask, $Z/contract, delta 0.NN)
+   📈 $STRIKEc exp MM/DD — Bid $X.XX / Ask $Y.YY
    ```
 
    - Emoji: 🟢 if the ticker's own backtested win rate >= 75%, 🟡 if 60-74% (based on its OWN
@@ -62,14 +62,16 @@ Run from the repo root (`/Users/vubl/projects/robinhood-scanner`).
    - Buy Under = current price × 0.99 — an execution-buffer convention only, NOT a backtested
      level. No Sell Target, Stop Loss, or G/L Ratio fields, ever (no validated basis; the exit is
      a DATE: the day before the report).
-   - Option line only when step 4 found a qualifying strike; otherwise
-     `📈 Stock-only (<reason>)`. Note thin liquidity explicitly when bid size/price is marginal.
-6. **Caveats in the message** (short — one line each):
-   - The stock backtest does not validate the options (leverage/theta/IV never tested); quotes are
-     real, the strategy on options is not proven.
-   - The statistical caveat gist from step 2.
-   - Robinhood's app shows the Bid by default on its Sell tab — our "buy = ask" number will look
-     higher than the app's headline price.
+   - Option line only when step 4 found a qualifying strike; otherwise OMIT the 📈 line entirely —
+     the card is just the 3 ticker/price/buy-under lines. (Format simplified 2026-07-13 at user
+     request: no "Stock-only (<reason>)" line, no per-contract cost/delta/thin-liquidity text in
+     the alert. The step-4 rules still apply unchanged for SELECTING the contract; the skip
+     reasons go to the run log instead of the alert.)
+6. **Caveats in the message**: ONE compact footer line combining the three original caveats
+   (options overlay unvalidated by the stock backtest; per-ticker win rates are ~8-trade samples
+   and the pooled 18-30-day edge is the validated result; option buy price = ask while Robinhood's
+   headline shows the bid). Condensed 2026-07-13 at user request from three paragraph-length
+   lines — see FOOTER in `live_scan/daily_pre_earnings_screen.py` for the canonical text.
 7. **Send**: `alerts/send_discord.py` with `DISCORD_WEBHOOK_URL` loaded from `config/.env`.
    ALWAYS send, even if zero candidates pass ("no qualifying candidates today") — a daily message
    confirms the pipeline is alive. Write the message to a temp file and pipe it in rather than
