@@ -176,7 +176,9 @@ def last_price(ticker: str) -> float | None:
 def company_name(ticker: str) -> str:
     try:
         info = yf.Ticker(ticker).get_info()
-        return info.get("shortName") or info.get("longName") or ticker
+        name = info.get("shortName") or info.get("longName") or ticker
+        # Yahoo shortNames sometimes carry a truncated share-class suffix ("Warner Bros. Discovery, Inc. - ")
+        return name.strip().rstrip("-").strip() or ticker
     except Exception:
         return ticker
 
