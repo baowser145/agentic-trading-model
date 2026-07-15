@@ -52,6 +52,7 @@ class RiskGate:
             notional = min(
                 self.config.max_order_notional,
                 portfolio.equity * self.config.max_position_pct,
+                portfolio.buying_power,  # settled cash only (T+1)
             )
             if notional < 1.0:
                 return None
@@ -124,11 +125,16 @@ class RiskGate:
                     f"max_order_notional: {notional:.2f} > {self.config.max_order_notional:.2f}",
                 )
 
-            if notional > portfolio.cash + 1e-9:
+            # Buys require settled cash — sell proceeds take ~1 business day to settle
+            if notional > portfolio.buying_power + 1e-9:
                 return RiskDecision(
                     False,
                     intent,
-                    f"insufficient cash: need {notional:.2f}, have {portfolio.cash:.2f}",
+                    (
+                        f"insufficient settled cash (T+1): need {notional:.2f}, "
+                        f"settled {portfolio.buying_power:.2f}, "
+                        f"unsettled {portfolio.unsettled_cash:.2f}"
+                    ),
                 )
 
             open_count = sum(1 for p in portfolio.positions.values() if p.quantity > 0)
@@ -182,7 +188,9 @@ class RiskGate:
             if notional is None:
                 return
             qty = notional / ref_price if ref_price > 0 else 0.0
-            working.cash -= notional
+            sc = working.settled_cash if working.settled_cash is not None else working.cash
+            working.settled_cash = sc - notional
+            working.cash = working.buying_power + working.unsettled_cash
             existing = working.positions.get(intent.symbol)
             if existing:
                 new_qty = existing.quantity + qty
@@ -206,7 +214,10 @@ class RiskGate:
             if not existing:
                 return
             remaining = existing.quantity - qty
-            working.cash += qty * ref_price
+            proceeds = qty * ref_price
+            # Sell proceeds are unsettled until T+1 — not buying power yet
+            working.unsettled_cash += proceeds
+            working.cash = working.buying_power + working.unsettled_cash
             if remaining <= 1e-12:
                 del working.positions[intent.symbol]
             else:
@@ -230,6 +241,8 @@ class RiskGate:
             starting_equity_today=portfolio.starting_equity_today,
             halted=portfolio.halted,
             halt_reason=portfolio.halt_reason,
+            settled_cash=portfolio.buying_power,
+            unsettled_cash=portfolio.unsettled_cash,
         )
         for signal in signals:
             intent = self.signal_to_intent(signal, working)

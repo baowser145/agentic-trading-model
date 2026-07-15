@@ -34,11 +34,17 @@ class AgenticBroker(Broker):
         starting_equity: float,
         intents_path: Path,
         shadow_paper: bool = True,
+        settlement_days: int = 1,
+        state_path: Path | None = None,
     ) -> None:
         self.intents_path = Path(intents_path)
         self.intents_path.parent.mkdir(parents=True, exist_ok=True)
         self.shadow_paper = shadow_paper
-        self._paper = PaperBroker(starting_equity)
+        self._paper = PaperBroker(
+            starting_equity,
+            settlement_days=settlement_days,
+            state_path=state_path,
+        )
         self._pending: list[dict] = []
 
     def snapshot(self) -> PortfolioSnapshot:

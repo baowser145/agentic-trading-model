@@ -44,6 +44,8 @@ class AppConfig:
     log_path: Path
     loop_interval_seconds: int
     config_path: Path
+    settlement_days: int = 1  # T+1: sell proceeds settle next business day
+    paper_state_path: Path | None = None
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -120,6 +122,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     symbols = list(data.get("symbols") or ["SPY"])
     symbols = [s.upper().strip() for s in symbols if str(s).strip()]
 
+    settlement_days = int(broker.get("settlement_days", account.get("settlement_days", 1)))
+    if settlement_days < 0:
+        settlement_days = 1
+
+    state_raw = logging_cfg.get("paper_state_path", "logs/paper_state.json")
+    state_path = Path(state_raw)
+    if not state_path.is_absolute():
+        state_path = (cfg_path.parent / state_path).resolve()
+
     return AppConfig(
         trading_mode=mode,
         symbols=symbols,
@@ -135,4 +146,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         log_path=log_path,
         loop_interval_seconds=int(loop.get("interval_seconds", 60)),
         config_path=cfg_path.resolve(),
+        settlement_days=settlement_days,
+        paper_state_path=state_path,
     )

@@ -62,7 +62,7 @@ class Position:
 
 @dataclass
 class PortfolioSnapshot:
-    cash: float
+    cash: float  # total cash = settled + unsettled
     equity: float
     positions: dict[str, Position]
     realized_pnl_today: float = 0.0
@@ -70,6 +70,19 @@ class PortfolioSnapshot:
     starting_equity_today: float = 0.0
     halted: bool = False
     halt_reason: str | None = None
+    # Buying power uses settled_cash only (T+1). None => treat all cash as settled.
+    settled_cash: float | None = None
+    unsettled_cash: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.settled_cash is None:
+            self.settled_cash = max(0.0, self.cash - self.unsettled_cash)
+
+    @property
+    def buying_power(self) -> float:
+        """Settled cash available to buy. Unsettled proceeds cannot fund new buys."""
+        sc = self.settled_cash if self.settled_cash is not None else self.cash
+        return max(0.0, sc)
 
     def position_qty(self, symbol: str) -> float:
         p = self.positions.get(symbol)
@@ -172,6 +185,8 @@ class TickResult:
             ],
             "portfolio": {
                 "cash": self.portfolio.cash,
+                "settled_cash": self.portfolio.buying_power,
+                "unsettled_cash": self.portfolio.unsettled_cash,
                 "equity": self.portfolio.equity,
                 "orders_today": self.portfolio.orders_today,
                 "realized_pnl_today": self.portfolio.realized_pnl_today,

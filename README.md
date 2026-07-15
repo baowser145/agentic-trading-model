@@ -33,11 +33,28 @@ See `config.yaml`:
 | `risk.max_daily_loss_pct` | `0.02` | Halts new orders when breached |
 | `broker.allow_live` | `false` | Must be true for live path |
 
+## Settlement (T+1)
+
+Sell proceeds are **not** immediately available to buy again:
+
+- **Settled cash** = buying power  
+- **Unsettled cash** = sell proceeds pending settlement (`broker.settlement_days`, default **1** business day)  
+- Weekends skipped (Fri sell → Mon settle)
+
+Paper state persists in `logs/paper_state.json` so multi-day sessions keep positions and pending settlements.
+
+## Multi-day paper session
+
+```bash
+# Run until Friday 2026-07-17 end of day (America/New_York)
+python -m agentic_trading run-loop --until 2026-07-17 --interval 300
+```
+
 ## Kill switch
 
 1. Set `trading_mode: paper` and `broker.allow_live: false`  
 2. Stop the process (`Ctrl-C`)  
-3. On halt, the engine stops the loop and refuses new risk-approved buys  
+3. On daily-loss halt, **buys** freeze; **sells** still allowed  
 
 ## Live / Robinhood Agentic
 

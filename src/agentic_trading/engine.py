@@ -36,9 +36,15 @@ class Engine:
                 starting_equity=config.starting_equity,
                 intents_path=intents,
                 shadow_paper=True,
+                settlement_days=config.settlement_days,
+                state_path=config.paper_state_path,
             )
         else:
-            self.broker = PaperBroker(config.starting_equity)
+            self.broker = PaperBroker(
+                config.starting_equity,
+                settlement_days=config.settlement_days,
+                state_path=config.paper_state_path,
+            )
 
     def run_once(self) -> TickResult:
         notes: list[str] = []

@@ -143,16 +143,31 @@ def test_same_tick_max_orders_per_day():
 
 def test_same_tick_cash_reservation():
     gate = _risk(max_order_notional=100.0, max_open_positions=5, max_position_pct=0.5)
-    port = _portfolio(cash=150.0, equity=1000.0)
+    # Only enough settled cash for one full $100 order
+    port = _portfolio(cash=100.0, equity=1000.0, settled_cash=100.0)
     signals = [
         Signal("SPY", SignalAction.ENTER_LONG, 0.5, "a", 100.0),
         Signal("QQQ", SignalAction.ENTER_LONG, 0.5, "b", 100.0),
     ]
-    # signal_to_intent sizes to min(max_order, equity*pos_pct)=100 each
     decisions = gate.process_signals(signals, port)
     approved = [d for d in decisions if d.approved]
     assert len(approved) == 1
-    assert any("insufficient cash" in d.reason for d in decisions if not d.approved)
+    # Second signal either no intent (buying_power < $1) or settled-cash reject
+    assert any(not d.approved for d in decisions)
+
+
+def test_unsettled_cash_cannot_fund_buy():
+    gate = _risk(max_order_notional=200.0)
+    port = _portfolio(
+        cash=1000.0,
+        equity=1000.0,
+        settled_cash=50.0,
+        unsettled_cash=950.0,
+    )
+    intent = OrderIntent(symbol="SPY", side=Side.BUY, notional=100.0)
+    d = gate.approve(intent, port, ref_price=100.0)
+    assert d.approved is False
+    assert "settled cash" in d.reason
 
 
 def test_signal_to_intent_enter_and_exit():

@@ -31,9 +31,13 @@ broker:
   account_label: agentic
   # Never default live; require both mode=live and this flag true
   allow_live: false
+  # T+1: sell proceeds not usable for new buys until next business day
+  settlement_days: 1
 
 logging:
   path: logs/decisions.jsonl
+  paper_state_path: logs/paper_state.json
 
 loop:
-  interval_seconds: 60
+  # 5 minutes between ticks for multi-day paper session
+  interval_seconds: 300
