@@ -4,18 +4,18 @@ symbols:
 - AAPL
 - MSFT
 - NVDA
-- COST
-- AVGO
 - AMD
-- JPM
-- XLK
+- AVGO
 - SMH
-- V
-- MA
+- JNJ
+- NFLX
 - QQQ
 - AMZN
 - META
 - GOOGL
+- XLK
+- XLF
+- JPM
 strategy:
   name: day_trade_playbook
   market_symbol: SPY

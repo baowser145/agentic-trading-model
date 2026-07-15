@@ -14,6 +14,32 @@ from agentic_trading.market.quotes import FixtureQuoteProvider
 
 ET = ZoneInfo("America/New_York")
 
+
+def _load_dotenv() -> None:
+    """Load project .env into os.environ if present (does not override existing)."""
+    for candidate in (
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[3] / ".env",  # project root from src/...
+        Path(__file__).resolve().parents[2] / ".env",
+    ):
+        if not candidate.is_file():
+            continue
+        try:
+            for line in candidate.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k, v = k.strip(), v.strip().strip("'").strip('"')
+                if k and k not in os.environ:
+                    os.environ[k] = v
+        except OSError:
+            pass
+        break
+
+
+_load_dotenv()
+
 # Liquid pool the LLM/heuristic can pull from when expanding the universe
 EXPANSION_POOL = [
     "SPY",

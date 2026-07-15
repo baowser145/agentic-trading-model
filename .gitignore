@@ -11,3 +11,5 @@ logs/
 *.log
 .DS_Store
 .env
+.env.local
+*.pem
