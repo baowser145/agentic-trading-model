@@ -1,20 +1,21 @@
-# Default: paper only. Live requires explicit mode + agent-mediated execution.
-trading_mode: paper  # paper | live
-
-# Liquid day-trade universe. SPY = market filter; others are candidates.
-# Selector agent ranks setups and picks the best new entry each tick.
+trading_mode: paper
 symbols:
-  - SPY
-  - QQQ
-  - IWM
-  - AAPL
-  - MSFT
-  - NVDA
-  - AMZN
-  - META
-  - GOOGL
-  - TSLA
-
+- SPY
+- AAPL
+- MSFT
+- NVDA
+- COST
+- AVGO
+- AMD
+- JPM
+- XLK
+- SMH
+- V
+- MA
+- QQQ
+- AMZN
+- META
+- GOOGL
 strategy:
   name: day_trade_playbook
   market_symbol: SPY
@@ -22,48 +23,36 @@ strategy:
   lookback_bars: 30
   range_lookback: 8
   pullback_tol_pct: 0.004
-
-# "What to buy" agent — ranks multi-name setups; does not replace risk rails
 selector:
   enabled: true
-  max_new_entries_per_tick: 2   # more aggressive: up to 2 new names per tick
+  max_new_entries_per_tick: 2
   prefer_relative_strength: true
   rs_lookback: 10
-
-# LLM research: expand universe + lock 3 daily trade names
-#   python -m agentic_trading research --llm --apply --apply-daily
 research:
   provider: spacexai
   model: grok-4.5
-
-# Engine only opens NEW longs in today's daily_picks (from research --apply-daily)
 daily_focus:
   enabled: true
   path: logs/daily_focus.json
   count: 3
-
 risk:
   risk_per_trade_pct: 0.05
   reward_risk_ratio: 2.0
   max_daily_loss_pct: 0.05
-  max_position_pct: 0.50
+  max_position_pct: 0.5
   max_open_positions: 3
   max_orders_per_day: 10
   max_order_notional: 1000.0
-
 account:
   starting_equity: 1000.0
   currency: USD
-
 broker:
   account_label: agentic
   allow_live: false
   settlement_days: 1
   trade_when_cash_available: true
-
 logging:
   path: logs/decisions.jsonl
   paper_state_path: logs/paper_state.json
-
 loop:
   interval_seconds: 300

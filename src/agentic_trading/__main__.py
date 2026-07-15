@@ -23,6 +23,9 @@ ET = ZoneInfo("America/New_York")
 
 def _print_tick(result) -> None:
     p = result.portfolio
+    settled = (
+        p.settled_cash if p.settled_cash is not None else p.cash - p.unsettled_cash
+    )
     print(
         json.dumps(
             {
@@ -31,8 +34,9 @@ def _print_tick(result) -> None:
                 "fills": len(result.fills),
                 "equity": round(p.equity, 4),
                 "cash_total": round(p.cash, 4),
-                "settled_cash": round(p.buying_power, 4),
+                "settled_cash": round(settled, 4),
                 "unsettled_cash": round(p.unsettled_cash, 4),
+                "buying_power": round(p.buying_power, 4),
                 "halted": p.halted,
                 "signals": [f"{s.symbol}:{s.action.value}" for s in result.signals],
                 "notes": result.notes,
@@ -114,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not suggest symbols outside current config",
     )
+    sub.add_parser(
+        "trades",
+        help="Trade journal summary (for early backtest review)",
+    )
 
     args = parser.parse_args(argv)
     config = load_config(args.config)
@@ -152,8 +160,17 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = build_engine(config)
 
+    if args.cmd == "trades":
+        print(json.dumps(engine.journal.summary(), indent=2), flush=True)
+        return 0
+
     if args.cmd == "status":
         snap = engine.broker.snapshot()
+        settled = (
+            snap.settled_cash
+            if snap.settled_cash is not None
+            else snap.cash - snap.unsettled_cash
+        )
         print(
             json.dumps(
                 {
@@ -192,8 +209,9 @@ def main(argv: list[str] | None = None) -> int:
                     "portfolio": {
                         "equity": snap.equity,
                         "cash_total": snap.cash,
-                        "settled_cash": snap.buying_power,
+                        "settled_cash": settled,
                         "unsettled_cash": snap.unsettled_cash,
+                        "buying_power": snap.buying_power,
                         "orders_today": snap.orders_today,
                         "halted": snap.halted,
                         "positions": {
@@ -201,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                             for k, v in snap.positions.items()
                         },
                     },
+                    "journal": engine.journal.summary(),
                 },
                 indent=2,
             )

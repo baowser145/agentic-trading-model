@@ -28,28 +28,26 @@ selector:
 
 Restart the paper loop after changing config.
 
-### LLM research pass (SpaceXAI / Grok) before live
+### LLM research: find more stocks + pick 3 per day
 
 ```bash
 cd ~/projects/agentic-trading-model
 source .venv/bin/activate
-pip install -e ".[llm]"          # once — installs openai client
-export XAI_API_KEY=xai-...       # from https://console.x.ai
+pip install -e ".[llm]"
+export XAI_API_KEY=xai-...
 
-# Advisory only — writes logs/research_latest.md + .json
-python -m agentic_trading research --llm
-
-# Optional: rewrite config symbols from recommendations (review MD first!)
-python -m agentic_trading research --llm --apply
+# Expand universe + lock today's 3 trade names for the engine
+python -m agentic_trading research --llm --apply --apply-daily
 ```
 
-Without an API key, `research` still runs a **heuristic** RS ranking (no LLM).
+| Flag | Effect |
+|------|--------|
+| `--llm` | Grok research (else heuristic) |
+| `--apply` | Merge expanded names into `config.yaml` symbols |
+| `--apply-daily` | Write `logs/daily_focus.json` — **only these 3 get NEW buys today** |
+| `--daily-n 3` | How many daily names (default 3) |
 
-**Live path (supervised):**  
-1. Paper until Friday  
-2. `research --llm` → read `logs/research_latest.md`  
-3. Only then consider `trading_mode: live` + `allow_live: true` + Agentic MCP with caps  
-4. Risk rails (5% stop risk, 5% daily halt, 2R) always stay in code — LLM never bypasses them
+Engine (`daily_focus.enabled: true`): new entries only in today's 3; exits still work on any open. Re-run research each morning.
 
 ### Risk profile (config.yaml)
 

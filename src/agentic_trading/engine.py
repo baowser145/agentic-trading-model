@@ -10,6 +10,7 @@ from agentic_trading.broker.agentic import AgenticBroker
 from agentic_trading.broker.base import Broker
 from agentic_trading.broker.paper import PaperBroker
 from agentic_trading.config import AppConfig
+from agentic_trading.journal import TradeJournal
 from agentic_trading.log import DecisionLogger
 from agentic_trading.market.quotes import FixtureQuoteProvider, QuoteProvider
 from agentic_trading.models import (
@@ -53,6 +54,12 @@ class Engine:
             if config.paper_state_path
             else Path("logs/open_plans.json")
         )
+        log_dir = (
+            config.paper_state_path.parent
+            if config.paper_state_path
+            else Path("logs")
+        )
+        self.journal = TradeJournal(log_dir)
         self._load_plans()
 
         if broker is not None:
@@ -278,9 +285,9 @@ class Engine:
             fill = self.broker.execute(decision.intent, ref)
             if fill:
                 fills.append(fill)
+                sig = next((s for s in signals if s.symbol == sym), None)
                 if fill.side == Side.BUY:
                     # Attach plan from signal if present
-                    sig = next((s for s in signals if s.symbol == sym), None)
                     if sig and sig.stop_price and sig.target_price:
                         self.open_plans[sym] = OpenTradePlan(
                             symbol=sym,
@@ -294,8 +301,26 @@ class Engine:
                             f"plan {sym}: stop={sig.stop_price:.4f} "
                             f"target={sig.target_price:.4f}"
                         )
-                elif fill.side == Side.SELL:
-                    self.open_plans.pop(sym, None)
+                    closed = self.journal.record_fill(
+                        fill,
+                        reason=(sig.reason if sig else decision.intent.reason),
+                        stop=sig.stop_price if sig else None,
+                        target=sig.target_price if sig else None,
+                    )
+                else:
+                    plan = self.open_plans.pop(sym, None)
+                    exit_reason = sig.reason if sig else decision.intent.reason
+                    closed = self.journal.record_fill(
+                        fill,
+                        exit_reason=exit_reason,
+                        stop=plan.stop if plan else None,
+                        target=plan.target if plan else None,
+                    )
+                    if closed:
+                        notes.append(
+                            f"closed {closed.trade_id} {closed.symbol} "
+                            f"pnl={closed.pnl:+.2f} ({closed.pnl_pct:+.2f}%)"
+                        )
             else:
                 notes.append(f"broker returned no fill for {sym}")
 
