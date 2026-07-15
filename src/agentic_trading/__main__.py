@@ -8,6 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from agentic_trading.agent.research import apply_recommended_symbols, run_research
 from agentic_trading.config import load_config
 from agentic_trading.engine import build_engine
 
@@ -77,9 +78,49 @@ def main(argv: list[str] | None = None) -> int:
         help="Stop after this local date (YYYY-MM-DD, America/New_York end of day)",
     )
     sub.add_parser("status", help="Show mode, risk caps, settlement, and log path")
+    research_p = sub.add_parser(
+        "research",
+        help="Research pass: heuristic or LLM (SpaceXAI/Grok) before live",
+    )
+    research_p.add_argument(
+        "--llm",
+        action="store_true",
+        help="Call Grok via XAI_API_KEY (SpaceXAI / api.x.ai); else heuristic",
+    )
+    research_p.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write recommended_symbols into config.yaml (review first without this)",
+    )
 
     args = parser.parse_args(argv)
     config = load_config(args.config)
+
+    if args.cmd == "research":
+        report = run_research(config, use_llm=bool(args.llm))
+        print(report.to_markdown(), flush=True)
+        if args.apply and report.recommended_symbols:
+            path = apply_recommended_symbols(
+                config.config_path, report.recommended_symbols
+            )
+            print(
+                json.dumps(
+                    {
+                        "applied": True,
+                        "config": str(path),
+                        "symbols": report.recommended_symbols,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+        elif args.apply:
+            print(
+                json.dumps({"applied": False, "reason": "no recommended_symbols"}),
+                flush=True,
+            )
+        return 0
+
     engine = build_engine(config)
 
     if args.cmd == "status":
@@ -94,6 +135,11 @@ def main(argv: list[str] | None = None) -> int:
                     "trade_when_cash_available": config.trade_when_cash_available,
                     "symbols": config.symbols,
                     "strategy": config.strategy.name,
+                    "selector": {
+                        "enabled": config.selector.enabled,
+                        "max_new_entries_per_tick": config.selector.max_new_entries_per_tick,
+                        "prefer_relative_strength": config.selector.prefer_relative_strength,
+                    },
                     "risk": {
                         "risk_per_trade_pct": config.risk.risk_per_trade_pct,
                         "reward_risk_ratio": config.risk.reward_risk_ratio,

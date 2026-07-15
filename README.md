@@ -14,8 +14,42 @@ Personal **paper-first** stock trading loop with **hard risk rails**. Optional l
 
 - **ETFs:** SPY (filter + trade), QQQ, IWM  
 - **Mega-caps:** AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA  
-- **Selector:** deterministic ranking agent (not LLM) so paper is reproducible.  
-  A future LLM layer can research names; **risk rails always stay in code**.
+- **Selector (in the loop):** ranks setups each tick; `max_new_entries_per_tick: 2`  
+- **Research (before live):** optional Grok LLM pass — does **not** place orders  
+
+### More aggressive selector
+
+In `config.yaml`:
+
+```yaml
+selector:
+  max_new_entries_per_tick: 2   # was 1
+```
+
+Restart the paper loop after changing config.
+
+### LLM research pass (SpaceXAI / Grok) before live
+
+```bash
+cd ~/projects/agentic-trading-model
+source .venv/bin/activate
+pip install -e ".[llm]"          # once — installs openai client
+export XAI_API_KEY=xai-...       # from https://console.x.ai
+
+# Advisory only — writes logs/research_latest.md + .json
+python -m agentic_trading research --llm
+
+# Optional: rewrite config symbols from recommendations (review MD first!)
+python -m agentic_trading research --llm --apply
+```
+
+Without an API key, `research` still runs a **heuristic** RS ranking (no LLM).
+
+**Live path (supervised):**  
+1. Paper until Friday  
+2. `research --llm` → read `logs/research_latest.md`  
+3. Only then consider `trading_mode: live` + `allow_live: true` + Agentic MCP with caps  
+4. Risk rails (5% stop risk, 5% daily halt, 2R) always stay in code — LLM never bypasses them
 
 ### Risk profile (config.yaml)
 
@@ -31,16 +65,26 @@ This is **much riskier** than the classic 1% rule — intentional per your choic
 
 ## Quick start
 
+**Use the project venv** (not system/Anaconda `python`).
+
 ```bash
 cd ~/projects/agentic-trading-model
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+python3 -m venv .venv          # once
+source .venv/bin/activate      # every new shell — should show (.venv)
+pip install -e ".[dev]"        # once (or after pull)
 pytest
 python -m agentic_trading status
 python -m agentic_trading run-once
 python -m agentic_trading run-loop --interval 5 --max-ticks 3
 ```
+
+Without activating the venv:
+
+```bash
+.venv/bin/python -m agentic_trading status
+```
+
+`No module named agentic_trading` means another Python is on your PATH (e.g. `/opt/anaconda3/bin/python`). Activate `.venv` or call `.venv/bin/python` explicitly.
 
 ## Config
 

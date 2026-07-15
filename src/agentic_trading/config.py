@@ -41,7 +41,7 @@ class StrategyConfig:
 @dataclass(frozen=True)
 class SelectorConfig:
     enabled: bool = True
-    max_new_entries_per_tick: int = 1
+    max_new_entries_per_tick: int = 2
     prefer_relative_strength: bool = True
     rs_lookback: int = 10
 
@@ -159,7 +159,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     sel = data.get("selector") or {}
     selector = SelectorConfig(
         enabled=bool(sel.get("enabled", True)),
-        max_new_entries_per_tick=max(1, int(sel.get("max_new_entries_per_tick", 1))),
+        max_new_entries_per_tick=max(1, int(sel.get("max_new_entries_per_tick", 2))),
         prefer_relative_strength=bool(sel.get("prefer_relative_strength", True)),
         rs_lookback=max(3, int(sel.get("rs_lookback", 10))),
     )

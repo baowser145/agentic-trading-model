@@ -16,6 +16,9 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+llm = [
+  "openai>=1.40",
+]
 
 [project.scripts]
 agentic-trading = "agentic_trading.__main__:main"

@@ -26,9 +26,15 @@ strategy:
 # "What to buy" agent — ranks multi-name setups; does not replace risk rails
 selector:
   enabled: true
-  max_new_entries_per_tick: 1   # pick the single best new name each tick
+  max_new_entries_per_tick: 2   # more aggressive: up to 2 new names per tick
   prefer_relative_strength: true
   rs_lookback: 10
+
+# LLM research pass (optional, before live): python -m agentic_trading research --llm
+# Requires: export XAI_API_KEY=...  and  pip install -e ".[llm]"
+research:
+  provider: spacexai   # xAI Grok via api.x.ai
+  model: grok-4.5
 
 risk:
   risk_per_trade_pct: 0.05
