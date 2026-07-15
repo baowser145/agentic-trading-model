@@ -60,6 +60,17 @@ def test_reject_max_orders_per_day():
     assert "max_orders_per_day" in d.reason
 
 
+def test_max_orders_still_allows_sell():
+    gate = _risk(max_orders_per_day=2)
+    port = _portfolio(
+        orders_today=2,
+        positions={"SPY": Position("SPY", 1.0, 100.0)},
+    )
+    intent = OrderIntent(symbol="SPY", side=Side.SELL, quantity=1.0)
+    d = gate.approve(intent, port, ref_price=90.0)
+    assert d.approved is True
+
+
 def test_halt_on_daily_loss():
     gate = _risk(max_daily_loss_pct=0.02)
     port = _portfolio(equity=970.0, starting_equity_today=1000.0)

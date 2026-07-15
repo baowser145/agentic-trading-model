@@ -112,14 +112,16 @@ class RiskGate:
                 )
 
         if portfolio.orders_today >= self.config.max_orders_per_day:
-            return RiskDecision(
-                approved=False,
-                intent=intent,
-                reason=(
-                    f"max_orders_per_day: {portfolio.orders_today} >= "
-                    f"{self.config.max_orders_per_day}"
-                ),
-            )
+            # Cap freezes new risk (buys). Still allow sells to reduce exposure.
+            if intent.side != Side.SELL:
+                return RiskDecision(
+                    approved=False,
+                    intent=intent,
+                    reason=(
+                        f"max_orders_per_day: {portfolio.orders_today} >= "
+                        f"{self.config.max_orders_per_day}"
+                    ),
+                )
 
         if ref_price <= 0:
             return RiskDecision(

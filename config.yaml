@@ -4,18 +4,18 @@ symbols:
 - AAPL
 - MSFT
 - NVDA
-- AMD
-- AVGO
-- SMH
-- JNJ
-- NFLX
-- QQQ
+- COST
+- V
+- MA
+- BAC
+- WMT
 - AMZN
 - META
 - GOOGL
+- QQQ
 - XLK
-- XLF
 - JPM
+- AMD
 strategy:
   name: day_trade_playbook
   market_symbol: SPY
@@ -41,7 +41,7 @@ risk:
   max_daily_loss_pct: 0.05
   max_position_pct: 0.5
   max_open_positions: 3
-  max_orders_per_day: 10
+  max_orders_per_day: 40
   max_order_notional: 1000.0
 account:
   starting_equity: 1000.0
