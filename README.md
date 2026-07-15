@@ -5,9 +5,17 @@ Personal **paper-first** stock trading loop with **hard risk rails**. Optional l
 ## What it does
 
 1. **Strategy (day_trade_playbook)** — SPY market filter + breakout / pullback entries  
-2. **Risk** — size so stop ≈ **5% equity** risk; **2R** take-profit; **5% daily** kill switch (you chose aggressive)  
-3. **Broker** — paper fills by default; live writes intents for agent/MCP execution  
-4. **Logging** — append-only JSONL of signals, decisions, fills, stop/target plans  
+2. **Selector agent** — ranks multi-name setups (relative strength, R, liquidity); picks best N  
+3. **Risk** — size so stop ≈ **5% equity** risk; **2R** take-profit; **5% daily** kill switch  
+4. **Broker** — paper fills by default; live writes intents for agent/MCP execution  
+5. **Logging** — JSONL of signals, selector picks, fills, stop/target plans  
+
+### Universe + agent
+
+- **ETFs:** SPY (filter + trade), QQQ, IWM  
+- **Mega-caps:** AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA  
+- **Selector:** deterministic ranking agent (not LLM) so paper is reproducible.  
+  A future LLM layer can research names; **risk rails always stay in code**.
 
 ### Risk profile (config.yaml)
 

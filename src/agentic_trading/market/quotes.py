@@ -20,11 +20,37 @@ class FixtureQuoteProvider(QuoteProvider):
     """
     Deterministic synthetic prices for paper mode / tests.
 
-    Each call advances a step index so SMA cross can be exercised.
-    Base prices are liquid-ETF-like; optional overrides for tests.
+    Each call advances a step index so setups can be exercised.
+    Base prices approximate liquid ETFs / mega-caps; phase offsets desync symbols
+    so the selector has differentiated relative-strength scores.
     """
 
-    BASE = {"SPY": 500.0, "QQQ": 450.0, "IWM": 200.0}
+    BASE = {
+        "SPY": 500.0,
+        "QQQ": 450.0,
+        "IWM": 200.0,
+        "AAPL": 190.0,
+        "MSFT": 420.0,
+        "NVDA": 120.0,
+        "AMZN": 185.0,
+        "META": 510.0,
+        "GOOGL": 175.0,
+        "TSLA": 250.0,
+    }
+
+    # Per-symbol phase so paths are not identical
+    PHASE = {
+        "SPY": 0,
+        "QQQ": 1,
+        "IWM": 2,
+        "AAPL": 3,
+        "MSFT": 4,
+        "NVDA": 5,
+        "AMZN": 6,
+        "META": 7,
+        "GOOGL": 8,
+        "TSLA": 9,
+    }
 
     def __init__(
         self,
@@ -41,9 +67,11 @@ class FixtureQuoteProvider(QuoteProvider):
         if symbol in self._series and self._series[symbol]:
             seq = self._series[symbol]
             return float(seq[min(idx, len(seq) - 1)])
-        base = self.BASE.get(symbol, 100.0)
-        # Gentle uptrend with small oscillation so SMA eventually trails
-        return base * (1.0 + 0.001 * idx + 0.002 * ((idx % 7) - 3))
+        base = self.BASE.get(symbol.upper(), 100.0)
+        phase = self.PHASE.get(symbol.upper(), hash(symbol) % 11)
+        # Gentle trend + oscillation; phase shifts peaks so RS differs
+        t = idx + phase
+        return base * (1.0 + 0.0012 * t + 0.003 * ((t % 9) - 4) + 0.0004 * phase)
 
     def get_quotes(self, symbols: list[str]) -> dict[str, Quote]:
         now = datetime.now(timezone.utc)
@@ -64,7 +92,6 @@ class FixtureQuoteProvider(QuoteProvider):
                 bars.append(
                     Bar(symbol=sym, close=self._price_at(sym, i), ts=now)
                 )
-            # Ensure at least `lookback` points by padding earlier synthetic
             while len(bars) < lookback:
                 i = self._step - len(bars)
                 bars.insert(

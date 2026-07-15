@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentic_trading.agent.selector import SelectorConfig, SetupSelectorAgent
 from agentic_trading.broker.agentic import AgenticBroker
 from agentic_trading.broker.base import Broker
 from agentic_trading.broker.paper import PaperBroker
@@ -36,6 +37,15 @@ class Engine:
         self.strategy = self._build_strategy(config)
         self.quotes = quotes or FixtureQuoteProvider()
         self.logger = logger or DecisionLogger(config.log_path)
+        self.selector = SetupSelectorAgent(
+            SelectorConfig(
+                enabled=config.selector.enabled,
+                max_new_entries_per_tick=config.selector.max_new_entries_per_tick,
+                market_symbol=config.strategy.market_symbol,
+                prefer_relative_strength=config.selector.prefer_relative_strength,
+                rs_lookback=config.selector.rs_lookback,
+            )
+        )
         self.open_plans: dict[str, OpenTradePlan] = {}
         self._plans_path = (
             config.paper_state_path.parent / "open_plans.json"
@@ -183,6 +193,33 @@ class Engine:
         # Merge: forced exits replace same-symbol signals
         forced_syms = {s.symbol for s in forced}
         signals = forced + [s for s in signals if s.symbol not in forced_syms]
+
+        # Selector agent: rank multi-name setups, keep best N new buys
+        signals, sel_notes = self.selector.select(signals, quotes, history)
+        notes.extend(sel_notes)
+
+        # Cap new entries by remaining open-position slots
+        open_n = sum(1 for p in portfolio.positions.values() if p.quantity > 0)
+        slots = max(0, self.config.risk.max_open_positions - open_n)
+        if slots == 0:
+            trimmed: list[Signal] = []
+            for s in signals:
+                if s.action == SignalAction.ENTER_LONG:
+                    trimmed.append(
+                        Signal(
+                            symbol=s.symbol,
+                            action=SignalAction.FLAT,
+                            strength=0.0,
+                            reason=f"no open slots (max_open_positions); was: {s.reason}",
+                            ref_price=s.ref_price,
+                            stop_price=s.stop_price,
+                            target_price=s.target_price,
+                        )
+                    )
+                else:
+                    trimmed.append(s)
+            signals = trimmed
+            notes.append("selector/slots: max open positions reached")
 
         decisions = self.risk.process_signals(signals, portfolio)
 

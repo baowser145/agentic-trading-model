@@ -39,6 +39,14 @@ class StrategyConfig:
 
 
 @dataclass(frozen=True)
+class SelectorConfig:
+    enabled: bool = True
+    max_new_entries_per_tick: int = 1
+    prefer_relative_strength: bool = True
+    rs_lookback: int = 10
+
+
+@dataclass(frozen=True)
 class AppConfig:
     trading_mode: TradingMode
     symbols: list[str]
@@ -54,6 +62,7 @@ class AppConfig:
     # True: buy with any cash in account after a sale (no wait). False: settled-only.
     trade_when_cash_available: bool = True
     paper_state_path: Path | None = None
+    selector: SelectorConfig = SelectorConfig()
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -147,6 +156,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if not state_path.is_absolute():
         state_path = (cfg_path.parent / state_path).resolve()
 
+    sel = data.get("selector") or {}
+    selector = SelectorConfig(
+        enabled=bool(sel.get("enabled", True)),
+        max_new_entries_per_tick=max(1, int(sel.get("max_new_entries_per_tick", 1))),
+        prefer_relative_strength=bool(sel.get("prefer_relative_strength", True)),
+        rs_lookback=max(3, int(sel.get("rs_lookback", 10))),
+    )
+
     return AppConfig(
         trading_mode=mode,
         symbols=symbols,
@@ -168,4 +185,5 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         settlement_days=settlement_days,
         trade_when_cash_available=trade_when_cash_available,
         paper_state_path=state_path,
+        selector=selector,
     )
