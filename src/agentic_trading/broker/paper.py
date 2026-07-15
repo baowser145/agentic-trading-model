@@ -256,7 +256,7 @@ class PaperBroker(Broker):
         else:
             settle_on = next_business_day(today, self.settlement_days)
             self.pending.append(PendingSettlement(proceeds, settle_on))
-        self.orders_today += 1
+        # Daily order cap counts new risk (buys) only; exits stay free.
         self._last_prices[intent.symbol] = ref_price
         self._save_state()
         return Fill(

@@ -206,8 +206,8 @@ class RiskGate:
 
     def _reserve(self, working: PortfolioSnapshot, intent: OrderIntent, ref_price: float) -> None:
         """Update working portfolio so subsequent same-tick signals see capacity used."""
-        working.orders_today += 1
         if intent.side == Side.BUY:
+            working.orders_today += 1
             notional = intent.notional
             if notional is None and intent.quantity is not None:
                 notional = intent.quantity * ref_price
