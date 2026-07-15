@@ -37,7 +37,7 @@ cohesive package (strategy + risk + broker + engine + agents)
 operate → paper through Friday
 
 ## Current Status
-Handoff 2026-07-15T03:38:43Z. MVP shipped + enhanced. Paper loop running (see `logs/session.pid`). Last LLM daily picks: **AAPL, MSFT, MA**. Next: commit dirty files, restart loop for journal, daily research until Friday, then backtest from journal. See `.grok/HANDOFF.md`.
+Handoff 2026-07-15T04:05:00Z. MVP shipped + enhanced. Leftover commit done (`6c4439b`); paper loop restarted with journal + daily focus **AAPL, MSFT, NVDA**. Next: morning research until Friday, then backtest from journal. See `.grok/HANDOFF.md`.
 
 ## Success Criteria
 - [x] Roast verdict: Reshape accepted by user
