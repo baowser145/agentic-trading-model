@@ -36,6 +36,7 @@ class AgenticBroker(Broker):
         shadow_paper: bool = True,
         settlement_days: int = 1,
         state_path: Path | None = None,
+        trade_when_cash_available: bool = True,
     ) -> None:
         self.intents_path = Path(intents_path)
         self.intents_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,6 +45,7 @@ class AgenticBroker(Broker):
             starting_equity,
             settlement_days=settlement_days,
             state_path=state_path,
+            trade_when_cash_available=trade_when_cash_available,
         )
         self._pending: list[dict] = []
 

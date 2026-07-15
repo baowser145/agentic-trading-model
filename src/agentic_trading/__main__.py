@@ -91,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
                     "trading_mode": config.trading_mode.value,
                     "allow_live": config.allow_live,
                     "settlement_days": config.settlement_days,
+                    "trade_when_cash_available": config.trade_when_cash_available,
                     "symbols": config.symbols,
                     "risk": {
                         "max_order_notional": config.risk.max_order_notional,
@@ -137,11 +138,13 @@ def main(argv: list[str] | None = None) -> int:
                     "interval_seconds": interval,
                     "until": until_dt.isoformat() if until_dt else None,
                     "settlement_days": config.settlement_days,
+                    "trade_when_cash_available": config.trade_when_cash_available,
                     "log_path": str(config.log_path),
                     "paper_state_path": str(config.paper_state_path),
                     "note": (
-                        "Buys use settled cash only. Sell proceeds settle after "
-                        f"{config.settlement_days} business day(s)."
+                        "Trade immediately when cash is available in the account "
+                        f"(trade_when_cash_available={config.trade_when_cash_available}). "
+                        f"Settlement still tracked as T+{config.settlement_days} for status."
                     ),
                 }
             ),

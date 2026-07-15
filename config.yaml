@@ -31,8 +31,10 @@ broker:
   account_label: agentic
   # Never default live; require both mode=live and this flag true
   allow_live: false
-  # T+1: sell proceeds not usable for new buys until next business day
+  # Track formal settlement (sell proceeds settle next business day)
   settlement_days: 1
+  # Trade immediately when cash is in the account — do NOT wait T+1 to redeploy
+  trade_when_cash_available: true
 
 logging:
   path: logs/decisions.jsonl

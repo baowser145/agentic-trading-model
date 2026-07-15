@@ -33,13 +33,11 @@ See `config.yaml`:
 | `risk.max_daily_loss_pct` | `0.02` | Halts new orders when breached |
 | `broker.allow_live` | `false` | Must be true for live path |
 
-## Settlement (T+1)
+## Settlement vs trading
 
-Sell proceeds are **not** immediately available to buy again:
-
-- **Settled cash** = buying power  
-- **Unsettled cash** = sell proceeds pending settlement (`broker.settlement_days`, default **1** business day)  
-- Weekends skipped (Fri sell → Mon settle)
+- **Settlement** still takes ~1 business day (`broker.settlement_days`) — tracked as settled vs unsettled for awareness.
+- **Trading:** by default (`trade_when_cash_available: true`) you **trade immediately** when cash is in the account after a sale. No forced 1-day wait to redeploy available funds.
+- Strict mode: set `trade_when_cash_available: false` to require settled cash only for buys.
 
 Paper state persists in `logs/paper_state.json` so multi-day sessions keep positions and pending settlements.
 

@@ -156,13 +156,29 @@ def test_same_tick_cash_reservation():
     assert any(not d.approved for d in decisions)
 
 
-def test_unsettled_cash_cannot_fund_buy():
+def test_available_cash_funds_buy_immediately():
+    """Default: unsettled proceeds still count as available to trade."""
     gate = _risk(max_order_notional=200.0)
     port = _portfolio(
         cash=1000.0,
         equity=1000.0,
         settled_cash=50.0,
         unsettled_cash=950.0,
+        trade_when_cash_available=True,
+    )
+    intent = OrderIntent(symbol="SPY", side=Side.BUY, notional=100.0)
+    d = gate.approve(intent, port, ref_price=100.0)
+    assert d.approved is True
+
+
+def test_strict_settled_only_blocks_unsettled():
+    gate = _risk(max_order_notional=200.0)
+    port = _portfolio(
+        cash=1000.0,
+        equity=1000.0,
+        settled_cash=50.0,
+        unsettled_cash=950.0,
+        trade_when_cash_available=False,
     )
     intent = OrderIntent(symbol="SPY", side=Side.BUY, notional=100.0)
     d = gate.approve(intent, port, ref_price=100.0)

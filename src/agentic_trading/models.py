@@ -70,9 +70,12 @@ class PortfolioSnapshot:
     starting_equity_today: float = 0.0
     halted: bool = False
     halt_reason: str | None = None
-    # Buying power uses settled_cash only (T+1). None => treat all cash as settled.
+    # Settlement tracking (cash still settles T+1). None settled_cash => all cash settled.
     settled_cash: float | None = None
     unsettled_cash: float = 0.0
+    # True (default): trade immediately on any cash in the account (no T+1 wait to redeploy).
+    # False: buys require settled cash only (strict T+1).
+    trade_when_cash_available: bool = True
 
     def __post_init__(self) -> None:
         if self.settled_cash is None:
@@ -80,7 +83,9 @@ class PortfolioSnapshot:
 
     @property
     def buying_power(self) -> float:
-        """Settled cash available to buy. Unsettled proceeds cannot fund new buys."""
+        """Cash that can fund a buy right now."""
+        if self.trade_when_cash_available:
+            return max(0.0, self.cash)  # available now — no 1-day delay
         sc = self.settled_cash if self.settled_cash is not None else self.cash
         return max(0.0, sc)
 

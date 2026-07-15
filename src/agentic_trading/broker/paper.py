@@ -36,11 +36,12 @@ class PendingSettlement:
 
 class PaperBroker(Broker):
     """
-    Simulated fills at ref_price with T+N cash settlement.
+    Simulated fills with settlement tracking.
 
-    - Buys debit settled cash only (buying power).
-    - Sells credit unsettled cash; funds settle after `settlement_days`
-      business day(s) (default 1 — proceeds not reusable same day).
+    - Sells: proceeds tracked as unsettled until T+N (default 1 business day).
+    - Buys: by default use **all cash in the account immediately** after a sale
+      (`trade_when_cash_available=True`) — no 1-day delay when funds are available.
+    - Strict mode (`trade_when_cash_available=False`): buys use settled cash only.
     """
 
     def __init__(
@@ -49,8 +50,10 @@ class PaperBroker(Broker):
         settlement_days: int = 1,
         state_path: Path | None = None,
         now: datetime | None = None,
+        trade_when_cash_available: bool = True,
     ) -> None:
         self.settlement_days = max(0, int(settlement_days))
+        self.trade_when_cash_available = bool(trade_when_cash_available)
         self.state_path = Path(state_path) if state_path else None
         self.settled_cash = float(starting_equity)
         self.pending: list[PendingSettlement] = []
@@ -75,6 +78,13 @@ class PaperBroker(Broker):
     @property
     def cash(self) -> float:
         return self.settled_cash + self.unsettled_cash
+
+    @property
+    def available_to_trade(self) -> float:
+        """Cash that can fund a buy right now."""
+        if self.trade_when_cash_available:
+            return self.cash
+        return self.settled_cash
 
     def _now(self) -> datetime:
         if self._now_override is not None:
@@ -130,6 +140,7 @@ class PaperBroker(Broker):
             halt_reason=self.halt_reason,
             settled_cash=self.settled_cash,
             unsettled_cash=self.unsettled_cash,
+            trade_when_cash_available=self.trade_when_cash_available,
         )
 
     def _equity(self) -> float:
@@ -161,17 +172,39 @@ class PaperBroker(Broker):
             return self._buy(intent, ref_price)
         return self._sell(intent, ref_price)
 
+    def _debit_cash(self, amount: float) -> bool:
+        """Debit available cash. Prefer settled, then unsettled pending proceeds."""
+        if amount > self.available_to_trade + 1e-9:
+            return False
+        from_settled = min(self.settled_cash, amount)
+        self.settled_cash -= from_settled
+        rem = amount - from_settled
+        if rem <= 1e-12:
+            return True
+        # Spend unsettled pending (FIFO) — cash is available to trade, not yet settled
+        new_pending: list[PendingSettlement] = []
+        for p in self.pending:
+            if rem <= 1e-12:
+                new_pending.append(p)
+                continue
+            if p.amount <= rem + 1e-12:
+                rem -= p.amount
+            else:
+                new_pending.append(PendingSettlement(p.amount - rem, p.settle_on))
+                rem = 0.0
+        self.pending = new_pending
+        return rem <= 1e-9
+
     def _buy(self, intent: OrderIntent, ref_price: float) -> Fill | None:
         notional = intent.notional
         if notional is None and intent.quantity is not None:
             notional = intent.quantity * ref_price
         if notional is None or notional <= 0:
             return None
-        # Only settled cash can fund buys (T+1)
-        if notional > self.settled_cash + 1e-9:
+        # Trade immediately when cash is available (default); no forced 1-day wait
+        if not self._debit_cash(notional):
             return None
         qty = notional / ref_price
-        self.settled_cash -= notional
         existing = self.positions.get(intent.symbol)
         if existing:
             new_qty = existing.quantity + qty
@@ -259,6 +292,7 @@ class PaperBroker(Broker):
             "last_prices": self._last_prices,
             "current_day": self._current_day.isoformat() if self._current_day else None,
             "settlement_days": self.settlement_days,
+            "trade_when_cash_available": self.trade_when_cash_available,
         }
         self.state_path.write_text(json.dumps(payload, indent=2))
 
@@ -292,3 +326,5 @@ class PaperBroker(Broker):
         self._current_day = date.fromisoformat(cd) if cd else None
         if "settlement_days" in data:
             self.settlement_days = int(data["settlement_days"])
+        if "trade_when_cash_available" in data:
+            self.trade_when_cash_available = bool(data["trade_when_cash_available"])

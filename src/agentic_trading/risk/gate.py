@@ -52,7 +52,7 @@ class RiskGate:
             notional = min(
                 self.config.max_order_notional,
                 portfolio.equity * self.config.max_position_pct,
-                portfolio.buying_power,  # settled cash only (T+1)
+                portfolio.buying_power,  # available cash (immediate when in account)
             )
             if notional < 1.0:
                 return None
@@ -125,14 +125,20 @@ class RiskGate:
                     f"max_order_notional: {notional:.2f} > {self.config.max_order_notional:.2f}",
                 )
 
-            # Buys require settled cash — sell proceeds take ~1 business day to settle
+            # Buys use available cash (default: any cash in account — no 1-day delay)
             if notional > portfolio.buying_power + 1e-9:
+                label = (
+                    "available cash"
+                    if portfolio.trade_when_cash_available
+                    else "settled cash (strict T+1)"
+                )
                 return RiskDecision(
                     False,
                     intent,
                     (
-                        f"insufficient settled cash (T+1): need {notional:.2f}, "
-                        f"settled {portfolio.buying_power:.2f}, "
+                        f"insufficient {label}: need {notional:.2f}, "
+                        f"buying_power {portfolio.buying_power:.2f}, "
+                        f"settled {portfolio.settled_cash}, "
                         f"unsettled {portfolio.unsettled_cash:.2f}"
                     ),
                 )
@@ -188,9 +194,19 @@ class RiskGate:
             if notional is None:
                 return
             qty = notional / ref_price if ref_price > 0 else 0.0
-            sc = working.settled_cash if working.settled_cash is not None else working.cash
-            working.settled_cash = sc - notional
-            working.cash = working.buying_power + working.unsettled_cash
+            # Reserve available cash immediately (no wait when funds are in account)
+            if working.trade_when_cash_available:
+                sc = working.settled_cash if working.settled_cash is not None else 0.0
+                from_settled = min(sc, notional)
+                working.settled_cash = sc - from_settled
+                rem = notional - from_settled
+                if rem > 0:
+                    working.unsettled_cash = max(0.0, working.unsettled_cash - rem)
+                working.cash = (working.settled_cash or 0.0) + working.unsettled_cash
+            else:
+                sc = working.settled_cash if working.settled_cash is not None else working.cash
+                working.settled_cash = sc - notional
+                working.cash = working.buying_power + working.unsettled_cash
             existing = working.positions.get(intent.symbol)
             if existing:
                 new_qty = existing.quantity + qty
@@ -215,9 +231,9 @@ class RiskGate:
                 return
             remaining = existing.quantity - qty
             proceeds = qty * ref_price
-            # Sell proceeds are unsettled until T+1 — not buying power yet
+            # Track as unsettled for settlement calendar; still available if flag on
             working.unsettled_cash += proceeds
-            working.cash = working.buying_power + working.unsettled_cash
+            working.cash = (working.settled_cash or 0.0) + working.unsettled_cash
             if remaining <= 1e-12:
                 del working.positions[intent.symbol]
             else:
@@ -241,8 +257,13 @@ class RiskGate:
             starting_equity_today=portfolio.starting_equity_today,
             halted=portfolio.halted,
             halt_reason=portfolio.halt_reason,
-            settled_cash=portfolio.buying_power,
+            settled_cash=(
+                portfolio.settled_cash
+                if portfolio.settled_cash is not None
+                else max(0.0, portfolio.cash - portfolio.unsettled_cash)
+            ),
             unsettled_cash=portfolio.unsettled_cash,
+            trade_when_cash_available=portfolio.trade_when_cash_available,
         )
         for signal in signals:
             intent = self.signal_to_intent(signal, working)

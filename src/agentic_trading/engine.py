@@ -38,12 +38,14 @@ class Engine:
                 shadow_paper=True,
                 settlement_days=config.settlement_days,
                 state_path=config.paper_state_path,
+                trade_when_cash_available=config.trade_when_cash_available,
             )
         else:
             self.broker = PaperBroker(
                 config.starting_equity,
                 settlement_days=config.settlement_days,
                 state_path=config.paper_state_path,
+                trade_when_cash_available=config.trade_when_cash_available,
             )
 
     def run_once(self) -> TickResult:

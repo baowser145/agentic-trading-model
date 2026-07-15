@@ -44,7 +44,9 @@ class AppConfig:
     log_path: Path
     loop_interval_seconds: int
     config_path: Path
-    settlement_days: int = 1  # T+1: sell proceeds settle next business day
+    settlement_days: int = 1  # track formal T+1 settlement
+    # True: buy with any cash in account after a sale (no wait). False: settled-only.
+    trade_when_cash_available: bool = True
     paper_state_path: Path | None = None
 
 
@@ -125,6 +127,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     settlement_days = int(broker.get("settlement_days", account.get("settlement_days", 1)))
     if settlement_days < 0:
         settlement_days = 1
+    # Default True: when cash is in the account, trade immediately (no 1-day delay).
+    trade_when_cash_available = bool(broker.get("trade_when_cash_available", True))
 
     state_raw = logging_cfg.get("paper_state_path", "logs/paper_state.json")
     state_path = Path(state_raw)
@@ -147,5 +151,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         loop_interval_seconds=int(loop.get("interval_seconds", 60)),
         config_path=cfg_path.resolve(),
         settlement_days=settlement_days,
+        trade_when_cash_available=trade_when_cash_available,
         paper_state_path=state_path,
     )
