@@ -1,0 +1,39 @@
+# Default: paper only. Live requires explicit mode + agent-mediated execution.
+trading_mode: paper  # paper | live
+
+symbols:
+  - SPY
+  - QQQ
+  - IWM
+
+strategy:
+  name: simple_momentum
+  sma_period: 5
+  # Price history length used for SMA (bars). Paper uses synthetic/fixture series.
+  lookback_bars: 20
+
+risk:
+  max_position_pct: 0.20          # per symbol vs equity
+  max_open_positions: 3
+  max_orders_per_day: 10
+  max_daily_loss_pct: 0.02
+  max_order_notional: 100.0       # hard tiny size for ~$1k book
+  # Floors: code will not allow looser than these without code change
+  # max_order_notional cannot exceed 500 in paper tests either via config clamp
+
+account:
+  # Paper starting equity (USD). Live: snapshot from broker when available.
+  starting_equity: 1000.0
+  currency: USD
+
+broker:
+  # Only used when trading_mode=live — Agentic account only
+  account_label: agentic
+  # Never default live; require both mode=live and this flag true
+  allow_live: false
+
+logging:
+  path: logs/decisions.jsonl
+
+loop:
+  interval_seconds: 60
