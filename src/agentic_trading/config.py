@@ -8,12 +8,13 @@ import yaml
 
 from agentic_trading.models import TradingMode
 
-# Hard floors — config may only tighten (smaller / fewer / stricter).
-FLOOR_MAX_ORDER_NOTIONAL = 500.0
-FLOOR_MAX_DAILY_LOSS_PCT = 0.05
+# Hard floors — config may only tighten (smaller / fewer / stricter) relative to these ceilings.
+FLOOR_MAX_ORDER_NOTIONAL = 5000.0
+FLOOR_MAX_DAILY_LOSS_PCT = 0.10  # allow up to 10% daily; default playbook uses 5%
 FLOOR_MAX_ORDERS_PER_DAY = 50
-FLOOR_MAX_POSITION_PCT = 0.50
+FLOOR_MAX_POSITION_PCT = 1.0
 FLOOR_MAX_OPEN_POSITIONS = 10
+FLOOR_MAX_RISK_PER_TRADE_PCT = 0.10  # allow up to 10% risk/trade; playbook uses 5%
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,8 @@ class RiskConfig:
     max_orders_per_day: int
     max_daily_loss_pct: float
     max_order_notional: float
+    risk_per_trade_pct: float = 0.05  # $ risk if stop hits
+    reward_risk_ratio: float = 2.0  # take-profit = R * this
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,9 @@ class StrategyConfig:
     name: str
     sma_period: int
     lookback_bars: int
+    market_symbol: str = "SPY"
+    range_lookback: int = 8  # bars for range high/low (breakout / stop)
+    pullback_tol_pct: float = 0.004  # how close to SMA counts as pullback
 
 
 @dataclass(frozen=True)
@@ -51,30 +57,37 @@ class AppConfig:
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
-    max_order = float(raw.get("max_order_notional", 100.0))
+    max_order = float(raw.get("max_order_notional", 1000.0))
     max_order = min(max_order, FLOOR_MAX_ORDER_NOTIONAL)
     if max_order <= 0:
-        max_order = 100.0
+        max_order = 1000.0
 
-    max_daily = float(raw.get("max_daily_loss_pct", 0.02))
+    max_daily = float(raw.get("max_daily_loss_pct", 0.05))
     max_daily = min(max_daily, FLOOR_MAX_DAILY_LOSS_PCT)
     if max_daily <= 0:
-        max_daily = 0.02
+        max_daily = 0.05
 
     max_orders = int(raw.get("max_orders_per_day", 10))
     max_orders = min(max_orders, FLOOR_MAX_ORDERS_PER_DAY)
     if max_orders < 1:
         max_orders = 1
 
-    max_pos_pct = float(raw.get("max_position_pct", 0.20))
+    max_pos_pct = float(raw.get("max_position_pct", 0.50))
     max_pos_pct = min(max_pos_pct, FLOOR_MAX_POSITION_PCT)
     if max_pos_pct <= 0:
-        max_pos_pct = 0.20
+        max_pos_pct = 0.50
 
     max_open = int(raw.get("max_open_positions", 3))
     max_open = min(max_open, FLOOR_MAX_OPEN_POSITIONS)
     if max_open < 1:
         max_open = 1
+
+    risk_pt = float(raw.get("risk_per_trade_pct", 0.05))
+    risk_pt = min(max(risk_pt, 0.001), FLOOR_MAX_RISK_PER_TRADE_PCT)
+
+    rr = float(raw.get("reward_risk_ratio", 2.0))
+    if rr < 0.5:
+        rr = 2.0
 
     return RiskConfig(
         max_position_pct=max_pos_pct,
@@ -82,12 +95,13 @@ def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
         max_orders_per_day=max_orders,
         max_daily_loss_pct=max_daily,
         max_order_notional=max_order,
+        risk_per_trade_pct=risk_pt,
+        reward_risk_ratio=rr,
     )
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
     if path is None:
-        # Prefer cwd config.yaml, then package-adjacent project root.
         candidates = [
             Path.cwd() / "config.yaml",
             Path(__file__).resolve().parents[2] / "config.yaml",
@@ -108,7 +122,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     broker = data.get("broker") or {}
     allow_live = bool(broker.get("allow_live", False))
-    # Live only if both mode=live AND allow_live
     if mode == TradingMode.LIVE and not allow_live:
         mode = TradingMode.PAPER
 
@@ -127,7 +140,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     settlement_days = int(broker.get("settlement_days", account.get("settlement_days", 1)))
     if settlement_days < 0:
         settlement_days = 1
-    # Default True: when cash is in the account, trade immediately (no 1-day delay).
     trade_when_cash_available = bool(broker.get("trade_when_cash_available", True))
 
     state_raw = logging_cfg.get("paper_state_path", "logs/paper_state.json")
@@ -139,9 +151,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         trading_mode=mode,
         symbols=symbols,
         strategy=StrategyConfig(
-            name=str(strat.get("name", "simple_momentum")),
-            sma_period=int(strat.get("sma_period", 5)),
-            lookback_bars=int(strat.get("lookback_bars", 20)),
+            name=str(strat.get("name", "day_trade_playbook")),
+            sma_period=int(strat.get("sma_period", 10)),
+            lookback_bars=int(strat.get("lookback_bars", 30)),
+            market_symbol=str(strat.get("market_symbol", "SPY")).upper(),
+            range_lookback=int(strat.get("range_lookback", 8)),
+            pullback_tol_pct=float(strat.get("pullback_tol_pct", 0.004)),
         ),
         risk=_clamp_risk(data.get("risk") or {}),
         starting_equity=float(account.get("starting_equity", 1000.0)),

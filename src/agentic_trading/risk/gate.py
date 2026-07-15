@@ -49,11 +49,29 @@ class RiskGate:
             return None
 
         if signal.action == SignalAction.ENTER_LONG and qty <= 0:
-            notional = min(
-                self.config.max_order_notional,
-                portfolio.equity * self.config.max_position_pct,
-                portfolio.buying_power,  # available cash (immediate when in account)
-            )
+            # Prefer risk-based size from strategy (stop distance × risk_per_trade_pct)
+            if signal.suggested_quantity and signal.suggested_quantity > 0:
+                return OrderIntent(
+                    symbol=signal.symbol,
+                    side=Side.BUY,
+                    quantity=signal.suggested_quantity,
+                    notional=signal.suggested_notional,
+                    reason=signal.reason,
+                    limit_price=price,
+                )
+            if signal.suggested_notional and signal.suggested_notional > 0:
+                notional = min(
+                    signal.suggested_notional,
+                    self.config.max_order_notional,
+                    portfolio.equity * self.config.max_position_pct,
+                    portfolio.buying_power,
+                )
+            else:
+                notional = min(
+                    self.config.max_order_notional,
+                    portfolio.equity * self.config.max_position_pct,
+                    portfolio.buying_power,
+                )
             if notional < 1.0:
                 return None
             return OrderIntent(

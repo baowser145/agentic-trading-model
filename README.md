@@ -4,10 +4,22 @@ Personal **paper-first** stock trading loop with **hard risk rails**. Optional l
 
 ## What it does
 
-1. **Strategy** — simple momentum (close vs SMA) on a small ETF universe  
-2. **Risk gate** — max order size, daily loss, max orders/day, max positions — every order must pass  
+1. **Strategy (day_trade_playbook)** — SPY market filter + breakout / pullback entries  
+2. **Risk** — size so stop ≈ **5% equity** risk; **2R** take-profit; **5% daily** kill switch (you chose aggressive)  
 3. **Broker** — paper fills by default; live writes intents for agent/MCP execution  
-4. **Logging** — append-only JSONL of signals, decisions, fills  
+4. **Logging** — append-only JSONL of signals, decisions, fills, stop/target plans  
+
+### Risk profile (config.yaml)
+
+| Rule | Value |
+|------|--------|
+| Risk per trade (if stop hits) | **5%** of equity |
+| Daily loss halt | **5%** |
+| Take profit | **2R** (2× stop distance) |
+| Market filter | SPY green (above SMA or range high) |
+
+On a $1,000 book: ~**$50** risk per trade if stop hits; ~**$50** max daily drawdown before halt.  
+This is **much riskier** than the classic 1% rule — intentional per your choice.
 
 ## Quick start
 

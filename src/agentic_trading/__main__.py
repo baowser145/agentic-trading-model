@@ -93,7 +93,10 @@ def main(argv: list[str] | None = None) -> int:
                     "settlement_days": config.settlement_days,
                     "trade_when_cash_available": config.trade_when_cash_available,
                     "symbols": config.symbols,
+                    "strategy": config.strategy.name,
                     "risk": {
+                        "risk_per_trade_pct": config.risk.risk_per_trade_pct,
+                        "reward_risk_ratio": config.risk.reward_risk_ratio,
                         "max_order_notional": config.risk.max_order_notional,
                         "max_daily_loss_pct": config.risk.max_daily_loss_pct,
                         "max_orders_per_day": config.risk.max_orders_per_day,

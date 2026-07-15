@@ -44,6 +44,23 @@ class Signal:
     strength: float  # 0..1
     reason: str
     ref_price: float
+    # Optional trade plan (risk-based sizing)
+    stop_price: float | None = None
+    target_price: float | None = None
+    suggested_quantity: float | None = None
+    suggested_notional: float | None = None
+
+
+@dataclass
+class OpenTradePlan:
+    """Active trade: exit on stop or 2R (or other) target."""
+
+    symbol: str
+    entry: float
+    stop: float
+    target: float
+    quantity: float
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -153,6 +170,10 @@ class TickResult:
                     "strength": s.strength,
                     "reason": s.reason,
                     "ref_price": s.ref_price,
+                    "stop_price": s.stop_price,
+                    "target_price": s.target_price,
+                    "suggested_quantity": s.suggested_quantity,
+                    "suggested_notional": s.suggested_notional,
                 }
                 for s in self.signals
             ],

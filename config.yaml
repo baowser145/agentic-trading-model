@@ -1,39 +1,39 @@
 # Default: paper only. Live requires explicit mode + agent-mediated execution.
 trading_mode: paper  # paper | live
 
+# Universe: liquid ETFs. SPY is also the market filter.
 symbols:
   - SPY
   - QQQ
   - IWM
 
 strategy:
-  name: simple_momentum
-  sma_period: 5
-  # Price history length used for SMA (bars). Paper uses synthetic/fixture series.
-  lookback_bars: 20
+  # Riskier day-trade playbook: market filter + breakout/pullback + stop/2R
+  name: day_trade_playbook
+  market_symbol: SPY
+  sma_period: 10
+  lookback_bars: 30
+  range_lookback: 8
+  pullback_tol_pct: 0.004
 
 risk:
-  max_position_pct: 0.20          # per symbol vs equity
+  # YOU CHOSE RISKY: 5% equity risk if stop hits; 5% daily loss kill switch
+  risk_per_trade_pct: 0.05
+  reward_risk_ratio: 2.0          # take-profit at 2R
+  max_daily_loss_pct: 0.05        # stop trading day when down 5%
+  max_position_pct: 0.50          # single name cap vs equity
   max_open_positions: 3
   max_orders_per_day: 10
-  max_daily_loss_pct: 0.02
-  max_order_notional: 100.0       # hard tiny size for ~$1k book
-  # Floors: code will not allow looser than these without code change
-  # max_order_notional cannot exceed 500 in paper tests either via config clamp
+  max_order_notional: 1000.0      # hard cap per order (full small account)
 
 account:
-  # Paper starting equity (USD). Live: snapshot from broker when available.
   starting_equity: 1000.0
   currency: USD
 
 broker:
-  # Only used when trading_mode=live — Agentic account only
   account_label: agentic
-  # Never default live; require both mode=live and this flag true
   allow_live: false
-  # Track formal settlement (sell proceeds settle next business day)
   settlement_days: 1
-  # Trade immediately when cash is in the account — do NOT wait T+1 to redeploy
   trade_when_cash_available: true
 
 logging:
@@ -41,5 +41,4 @@ logging:
   paper_state_path: logs/paper_state.json
 
 loop:
-  # 5 minutes between ticks for multi-day paper session
   interval_seconds: 300
