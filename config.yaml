@@ -30,11 +30,17 @@ selector:
   prefer_relative_strength: true
   rs_lookback: 10
 
-# LLM research pass (optional, before live): python -m agentic_trading research --llm
-# Requires: export XAI_API_KEY=...  and  pip install -e ".[llm]"
+# LLM research: expand universe + lock 3 daily trade names
+#   python -m agentic_trading research --llm --apply --apply-daily
 research:
-  provider: spacexai   # xAI Grok via api.x.ai
+  provider: spacexai
   model: grok-4.5
+
+# Engine only opens NEW longs in today's daily_picks (from research --apply-daily)
+daily_focus:
+  enabled: true
+  path: logs/daily_focus.json
+  count: 3
 
 risk:
   risk_per_trade_pct: 0.05

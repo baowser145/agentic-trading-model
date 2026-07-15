@@ -4,12 +4,47 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from agentic_trading.config import AppConfig
 from agentic_trading.market.quotes import FixtureQuoteProvider
+
+ET = ZoneInfo("America/New_York")
+
+# Liquid pool the LLM/heuristic can pull from when expanding the universe
+EXPANSION_POOL = [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "DIA",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "TSLA",
+    "AMD",
+    "AVGO",
+    "NFLX",
+    "CRM",
+    "ORCL",
+    "JPM",
+    "BAC",
+    "XLF",
+    "XLE",
+    "XLK",
+    "SMH",
+    "COST",
+    "WMT",
+    "JNJ",
+    "UNH",
+    "V",
+    "MA",
+]
 
 
 @dataclass
@@ -29,6 +64,8 @@ class ResearchReport:
     market_view: str
     picks: list[ResearchPick] = field(default_factory=list)
     recommended_symbols: list[str] = field(default_factory=list)
+    daily_picks: list[str] = field(default_factory=list)  # exactly N trade names for the day
+    expanded_candidates: list[str] = field(default_factory=list)  # new names beyond current cfg
     raw_text: str = ""
     notes: list[str] = field(default_factory=list)
 
@@ -40,6 +77,8 @@ class ResearchReport:
             "market_view": self.market_view,
             "picks": [asdict(p) for p in self.picks],
             "recommended_symbols": self.recommended_symbols,
+            "daily_picks": self.daily_picks,
+            "expanded_candidates": self.expanded_candidates,
             "raw_text": self.raw_text,
             "notes": self.notes,
         }
@@ -49,6 +88,9 @@ class ResearchReport:
             f"# Research report — {self.ts}",
             "",
             f"**Mode:** `{self.mode}`" + (f" · model `{self.model}`" if self.model else ""),
+            "",
+            "## Today's trade list (max 3)",
+            ", ".join(f"**{s}**" for s in self.daily_picks) or "(none)",
             "",
             "## Market view",
             self.market_view or "(none)",
@@ -64,7 +106,10 @@ class ResearchReport:
                 lines.append(f"  - Risks: {p.risks}")
         lines += [
             "",
-            "## Recommended focus list",
+            "## Expanded candidates (new names)",
+            ", ".join(self.expanded_candidates) or "(none)",
+            "",
+            "## Recommended watch universe",
             ", ".join(self.recommended_symbols) or "(empty)",
             "",
             "## Notes",
@@ -87,12 +132,17 @@ def _rel_strength(
     return (sc[-1] / sc[-n] - 1.0) - (mc[-1] / mc[-n] - 1.0)
 
 
-def _snapshot_context(config: AppConfig) -> dict[str, Any]:
-    """Build a compact market context from the paper quote provider (or future live feed)."""
+def _snapshot_context(
+    config: AppConfig, extra_symbols: list[str] | None = None
+) -> dict[str, Any]:
     provider = FixtureQuoteProvider()
-    # Advance so history has shape; use current step
-    symbols = list(dict.fromkeys(config.symbols + [config.strategy.market_symbol]))
-    # Warm history by stepping so lookback is meaningful
+    symbols = list(
+        dict.fromkeys(
+            list(config.symbols)
+            + [config.strategy.market_symbol]
+            + list(extra_symbols or [])
+        )
+    )
     for _ in range(max(15, config.strategy.lookback_bars // 2)):
         provider.advance(1)
     quotes = provider.get_quotes(symbols)
@@ -110,28 +160,65 @@ def _snapshot_context(config: AppConfig) -> dict[str, Any]:
                 "price": round(q.price, 4) if q else None,
                 "range_change_pct": round(chg * 100, 3),
                 "rs_vs_spy": None if rs is None else round(rs * 100, 3),
+                "in_config": sym in config.symbols,
             }
         )
     rows.sort(key=lambda r: (r["rs_vs_spy"] is None, -(r["rs_vs_spy"] or -999)))
     return {
         "universe": symbols,
+        "current_config_symbols": config.symbols,
+        "expansion_pool": EXPANSION_POOL,
         "market_symbol": config.strategy.market_symbol,
         "risk": {
             "risk_per_trade_pct": config.risk.risk_per_trade_pct,
             "max_daily_loss_pct": config.risk.max_daily_loss_pct,
             "reward_risk_ratio": config.risk.reward_risk_ratio,
+            "max_open_positions": config.risk.max_open_positions,
         },
         "rows": rows,
         "note": (
-            "Paper fixture quotes are synthetic. Before live, replace with real "
-            "quotes / news. This pass is a decision aid, not an order."
+            "Paper fixture quotes are synthetic. Before live, use real quotes/news. "
+            "daily_picks = the only names allowed for NEW entries today (besides managing opens)."
         ),
     }
 
 
-def heuristic_research(config: AppConfig, context: dict[str, Any] | None = None) -> ResearchReport:
-    """No API key needed — rank by relative strength / range change."""
-    ctx = context or _snapshot_context(config)
+def _pick_daily(
+    picks: list[ResearchPick],
+    recommended: list[str],
+    config: AppConfig,
+    n: int = 3,
+) -> list[str]:
+    """Choose up to n trade names: buy_candidates by conviction, else recommended."""
+    mkt = config.strategy.market_symbol
+    ordered: list[str] = []
+    for p in sorted(picks, key=lambda x: x.conviction, reverse=True):
+        if p.action == "buy_candidate" and p.symbol and p.symbol != mkt:
+            if p.symbol not in ordered:
+                ordered.append(p.symbol)
+    for s in recommended:
+        if s != mkt and s not in ordered:
+            ordered.append(s)
+    for s in config.symbols:
+        if s != mkt and s not in ordered:
+            ordered.append(s)
+    return ordered[: max(1, n)]
+
+
+def _expanded_from(recommended: list[str], config: AppConfig) -> list[str]:
+    cur = set(config.symbols)
+    return [s for s in recommended if s not in cur and s != config.strategy.market_symbol]
+
+
+def heuristic_research(
+    config: AppConfig,
+    context: dict[str, Any] | None = None,
+    *,
+    daily_n: int = 3,
+    expand: bool = True,
+) -> ResearchReport:
+    extra = EXPANSION_POOL if expand else None
+    ctx = context or _snapshot_context(config, extra)
     mkt = config.strategy.market_symbol
     rows = [r for r in ctx["rows"] if r["symbol"] != mkt]
     rows_sorted = sorted(
@@ -139,7 +226,7 @@ def heuristic_research(config: AppConfig, context: dict[str, Any] | None = None)
         key=lambda r: (r.get("rs_vs_spy") is None, -(r.get("rs_vs_spy") or -999)),
     )
     picks: list[ResearchPick] = []
-    for r in rows_sorted[:5]:
+    for r in rows_sorted[:8]:
         rs = r.get("rs_vs_spy") or 0.0
         picks.append(
             ResearchPick(
@@ -153,15 +240,18 @@ def heuristic_research(config: AppConfig, context: dict[str, Any] | None = None)
                 risks="Synthetic paper data; no news/fundamentals.",
             )
         )
-    # Always keep SPY in focus for market filter
-    focus = [mkt] + [p.symbol for p in picks if p.action == "buy_candidate"][:6]
-    # Dedupe preserve order
+
+    # Universe: config + top expansion names
+    focus = [mkt] + [p.symbol for p in picks if p.action == "buy_candidate"]
     seen: set[str] = set()
-    recommended = []
-    for s in focus + config.symbols:
+    recommended: list[str] = []
+    for s in focus + list(ctx.get("universe") or []) + config.symbols:
         if s not in seen:
             seen.add(s)
             recommended.append(s)
+    recommended = recommended[:16]
+    daily = _pick_daily(picks, recommended, config, n=daily_n)
+    expanded = _expanded_from(recommended, config)
 
     spy_row = next((r for r in ctx["rows"] if r["symbol"] == mkt), None)
     market_view = (
@@ -176,9 +266,12 @@ def heuristic_research(config: AppConfig, context: dict[str, Any] | None = None)
         model=None,
         market_view=market_view,
         picks=picks,
-        recommended_symbols=recommended[:10],
+        recommended_symbols=recommended,
+        daily_picks=daily,
+        expanded_candidates=expanded[:8],
         notes=[
-            "Heuristic only — set XAI_API_KEY and run with --llm for Grok research.",
+            f"Daily trade list locked to {len(daily)} names: {', '.join(daily)}.",
+            "Heuristic only — use --llm for Grok expansion + narrative.",
             ctx.get("note", ""),
         ],
     )
@@ -186,14 +279,12 @@ def heuristic_research(config: AppConfig, context: dict[str, Any] | None = None)
 
 def _extract_json_block(text: str) -> dict[str, Any] | None:
     text = text.strip()
-    # fenced ```json
     m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if m:
         try:
             return json.loads(m.group(1))
         except json.JSONDecodeError:
             pass
-    # raw object
     start, end = text.find("{"), text.rfind("}")
     if start >= 0 and end > start:
         try:
@@ -203,32 +294,29 @@ def _extract_json_block(text: str) -> dict[str, Any] | None:
     return None
 
 
-def llm_research(config: AppConfig, context: dict[str, Any] | None = None) -> ResearchReport:
-    """
-    Call SpaceXAI / xAI (OpenAI-compatible) for a research pass.
-
-    Requires: XAI_API_KEY and `pip install openai`.
-    """
-    ctx = context or _snapshot_context(config)
+def llm_research(
+    config: AppConfig,
+    context: dict[str, Any] | None = None,
+    *,
+    daily_n: int = 3,
+    expand: bool = True,
+) -> ResearchReport:
+    extra = EXPANSION_POOL if expand else None
+    ctx = context or _snapshot_context(config, extra)
     api_key = os.environ.get("XAI_API_KEY")
     if not api_key:
-        report = heuristic_research(config, ctx)
+        report = heuristic_research(config, ctx, daily_n=daily_n, expand=expand)
         report.notes.insert(
             0,
-            "XAI_API_KEY not set — fell back to heuristic. "
-            "export XAI_API_KEY=... then re-run with --llm",
+            "XAI_API_KEY not set — fell back to heuristic.",
         )
         return report
 
     try:
         from openai import OpenAI
     except ImportError:
-        report = heuristic_research(config, ctx)
-        report.notes.insert(
-            0,
-            "openai package missing — pip install 'agentic-trading[llm]' or openai. "
-            "Fell back to heuristic.",
-        )
+        report = heuristic_research(config, ctx, daily_n=daily_n, expand=expand)
+        report.notes.insert(0, "openai package missing — fell back to heuristic.")
         return report
 
     model = os.environ.get("XAI_MODEL", "grok-4.5")
@@ -237,14 +325,16 @@ def llm_research(config: AppConfig, context: dict[str, Any] | None = None) -> Re
     system = (
         "You are a cautious equity research assistant for a PAPER trading bot. "
         "You do NOT place orders. Output ONLY valid JSON matching the schema. "
-        "Prefer liquid US mega-caps and ETFs. Respect that risk is aggressive (5% per trade). "
-        "Never promise profits. Flag uncertainty."
+        "Prefer liquid US mega-caps and major sector ETFs. "
+        f"Pick exactly {daily_n} names for daily_picks (trade today only; NOT including SPY). "
+        "You may suggest expanded_candidates from expansion_pool that are NOT already in "
+        "current_config_symbols. Respect aggressive 5% risk-per-trade. Never promise profits."
     )
     user = {
         "task": (
-            "Given this universe snapshot, produce a short research pass: "
-            "market view, up to 5 picks with action buy_candidate|avoid|hold_watch, "
-            "and recommended_symbols (8-10 tickers, always include SPY first)."
+            f"Research liquid names. Suggest more stocks if useful (expanded_candidates). "
+            f"Pick exactly {daily_n} daily_picks for NEW long entries today (highest quality). "
+            "Also return recommended_symbols watch universe (include SPY first, 8-12 names)."
         ),
         "schema": {
             "market_view": "string",
@@ -257,27 +347,25 @@ def llm_research(config: AppConfig, context: dict[str, Any] | None = None) -> Re
                     "risks": "string",
                 }
             ],
+            "daily_picks": ["T1", "T2", "T3"],
+            "expanded_candidates": ["NEW1", "NEW2"],
             "recommended_symbols": ["SPY", "..."],
         },
         "context": ctx,
     }
 
-    # Prefer chat.completions for broad compatibility with OpenAI SDK
     try:
         resp = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system},
-                {
-                    "role": "user",
-                    "content": json.dumps(user, indent=2),
-                },
+                {"role": "user", "content": json.dumps(user, indent=2)},
             ],
             temperature=0.3,
         )
         raw = (resp.choices[0].message.content or "").strip()
-    except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
-        report = heuristic_research(config, ctx)
+    except Exception as e:  # noqa: BLE001
+        report = heuristic_research(config, ctx, daily_n=daily_n, expand=expand)
         report.notes.insert(0, f"LLM call failed ({e!r}); fell back to heuristic.")
         return report
 
@@ -303,7 +391,35 @@ def llm_research(config: AppConfig, context: dict[str, Any] | None = None) -> Re
     if "SPY" not in recommended:
         recommended = ["SPY"] + recommended
     if not recommended:
-        recommended = config.symbols
+        recommended = list(config.symbols)
+
+    daily_raw = [
+        str(s).upper() for s in (parsed.get("daily_picks") or []) if str(s).strip()
+    ]
+    daily_raw = [s for s in daily_raw if s != config.strategy.market_symbol]
+    if len(daily_raw) < daily_n:
+        daily = _pick_daily(picks, recommended, config, n=daily_n)
+        # prefer model order when partial
+        for s in daily_raw:
+            if s not in daily:
+                daily.insert(0, s)
+        daily = daily[:daily_n]
+    else:
+        daily = daily_raw[:daily_n]
+
+    expanded = [
+        str(s).upper()
+        for s in (parsed.get("expanded_candidates") or [])
+        if str(s).strip() and str(s).upper() not in config.symbols
+    ]
+    if not expanded:
+        expanded = _expanded_from(recommended, config)
+
+    # Merge expanded into recommended universe
+    for s in expanded + daily:
+        if s not in recommended:
+            recommended.append(s)
+    recommended = recommended[:16]
 
     return ResearchReport(
         ts=datetime.now(timezone.utc).isoformat(),
@@ -311,14 +427,54 @@ def llm_research(config: AppConfig, context: dict[str, Any] | None = None) -> Re
         model=model,
         market_view=str(parsed.get("market_view") or raw[:500]),
         picks=picks,
-        recommended_symbols=recommended[:12],
+        recommended_symbols=recommended,
+        daily_picks=daily,
+        expanded_candidates=expanded[:10],
         raw_text=raw,
         notes=[
-            "LLM research is advisory only — risk rails and playbook still govern orders.",
-            "Review picks before any live Agentic use.",
+            f"Daily trade list ({daily_n}): {', '.join(daily)} — engine will only NEW-enter these.",
+            "LLM research is advisory; risk rails still govern size/stops.",
             ctx.get("note", ""),
         ],
     )
+
+
+def write_daily_focus(
+    report: ResearchReport,
+    out_path: Path,
+    *,
+    daily_n: int = 3,
+) -> Path:
+    """Persist today's 3 trade names for the engine."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    today = datetime.now(ET).date().isoformat()
+    payload = {
+        "date": today,
+        "ts": report.ts,
+        "mode": report.mode,
+        "model": report.model,
+        "daily_picks": report.daily_picks[:daily_n],
+        "expanded_candidates": report.expanded_candidates,
+        "recommended_symbols": report.recommended_symbols,
+        "market_view": report.market_view,
+        "picks": [asdict(p) for p in report.picks if p.symbol in report.daily_picks],
+    }
+    out_path.write_text(json.dumps(payload, indent=2))
+    return out_path
+
+
+def load_daily_focus(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None
+    # Expire if not today (America/New_York)
+    today = datetime.now(ET).date().isoformat()
+    if data.get("date") and data["date"] != today:
+        return {**data, "expired": True}
+    return data
 
 
 def run_research(
@@ -326,10 +482,15 @@ def run_research(
     *,
     use_llm: bool = False,
     out_dir: Path | None = None,
+    daily_n: int = 3,
+    expand: bool = True,
 ) -> ResearchReport:
     out_dir = out_dir or (config.config_path.parent / "logs")
     out_dir.mkdir(parents=True, exist_ok=True)
-    report = llm_research(config) if use_llm else heuristic_research(config)
+    if use_llm:
+        report = llm_research(config, daily_n=daily_n, expand=expand)
+    else:
+        report = heuristic_research(config, daily_n=daily_n, expand=expand)
 
     json_path = out_dir / "research_latest.json"
     md_path = out_dir / "research_latest.md"
@@ -341,12 +502,10 @@ def run_research(
 
 
 def apply_recommended_symbols(config_path: Path, symbols: list[str]) -> Path:
-    """Rewrite config.yaml symbols list (preserves rest of file via YAML load/dump)."""
     import yaml
 
     data = yaml.safe_load(config_path.read_text()) or {}
-    # Always put SPY first if present
-    clean = []
+    clean: list[str] = []
     seen: set[str] = set()
     for s in symbols:
         u = str(s).upper().strip()
@@ -356,5 +515,30 @@ def apply_recommended_symbols(config_path: Path, symbols: list[str]) -> Path:
     if "SPY" in clean:
         clean = ["SPY"] + [s for s in clean if s != "SPY"]
     data["symbols"] = clean
+    config_path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
+    return config_path
+
+
+def apply_universe_from_report(config_path: Path, report: ResearchReport) -> Path:
+    """Merge expanded + recommended into config symbols (SPY first)."""
+    import yaml
+
+    data = yaml.safe_load(config_path.read_text()) or {}
+    current = [str(s).upper() for s in (data.get("symbols") or [])]
+    merged = (
+        ["SPY"]
+        + report.daily_picks
+        + report.expanded_candidates
+        + report.recommended_symbols
+        + current
+    )
+    clean: list[str] = []
+    seen: set[str] = set()
+    for s in merged:
+        if s and s not in seen:
+            seen.add(s)
+            clean.append(s)
+    # Cap universe size for paper
+    data["symbols"] = clean[:16]
     config_path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
     return config_path

@@ -29,6 +29,7 @@ class FixtureQuoteProvider(QuoteProvider):
         "SPY": 500.0,
         "QQQ": 450.0,
         "IWM": 200.0,
+        "DIA": 390.0,
         "AAPL": 190.0,
         "MSFT": 420.0,
         "NVDA": 120.0,
@@ -36,6 +37,23 @@ class FixtureQuoteProvider(QuoteProvider):
         "META": 510.0,
         "GOOGL": 175.0,
         "TSLA": 250.0,
+        "AMD": 160.0,
+        "AVGO": 180.0,
+        "NFLX": 700.0,
+        "CRM": 280.0,
+        "ORCL": 140.0,
+        "JPM": 210.0,
+        "BAC": 40.0,
+        "XLF": 45.0,
+        "XLE": 90.0,
+        "XLK": 230.0,
+        "SMH": 250.0,
+        "COST": 900.0,
+        "WMT": 80.0,
+        "JNJ": 155.0,
+        "UNH": 520.0,
+        "V": 290.0,
+        "MA": 480.0,
     }
 
     # Per-symbol phase so paths are not identical
@@ -50,6 +68,13 @@ class FixtureQuoteProvider(QuoteProvider):
         "META": 7,
         "GOOGL": 8,
         "TSLA": 9,
+        "AMD": 10,
+        "AVGO": 11,
+        "NFLX": 12,
+        "CRM": 13,
+        "JPM": 14,
+        "XLK": 15,
+        "SMH": 16,
     }
 
     def __init__(

@@ -47,6 +47,15 @@ class SelectorConfig:
 
 
 @dataclass(frozen=True)
+class DailyFocusConfig:
+    """Only allow NEW entries in today's research picks (exits always allowed)."""
+
+    enabled: bool = True
+    path: Path | None = None
+    count: int = 3
+
+
+@dataclass(frozen=True)
 class AppConfig:
     trading_mode: TradingMode
     symbols: list[str]
@@ -63,6 +72,7 @@ class AppConfig:
     trade_when_cash_available: bool = True
     paper_state_path: Path | None = None
     selector: SelectorConfig = SelectorConfig()
+    daily_focus: DailyFocusConfig = DailyFocusConfig()
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -164,6 +174,17 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         rs_lookback=max(3, int(sel.get("rs_lookback", 10))),
     )
 
+    df = data.get("daily_focus") or {}
+    df_path_raw = df.get("path", "logs/daily_focus.json")
+    df_path = Path(df_path_raw)
+    if not df_path.is_absolute():
+        df_path = (cfg_path.parent / df_path).resolve()
+    daily_focus = DailyFocusConfig(
+        enabled=bool(df.get("enabled", True)),
+        path=df_path,
+        count=max(1, int(df.get("count", 3))),
+    )
+
     return AppConfig(
         trading_mode=mode,
         symbols=symbols,
@@ -186,4 +207,5 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         trade_when_cash_available=trade_when_cash_available,
         paper_state_path=state_path,
         selector=selector,
+        daily_focus=daily_focus,
     )

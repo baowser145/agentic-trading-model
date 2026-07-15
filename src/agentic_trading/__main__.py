@@ -8,7 +8,13 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from agentic_trading.agent.research import apply_recommended_symbols, run_research
+from agentic_trading.agent.research import (
+    apply_recommended_symbols,
+    apply_universe_from_report,
+    load_daily_focus,
+    run_research,
+    write_daily_focus,
+)
 from agentic_trading.config import load_config
 from agentic_trading.engine import build_engine
 
@@ -90,35 +96,58 @@ def main(argv: list[str] | None = None) -> int:
     research_p.add_argument(
         "--apply",
         action="store_true",
-        help="Write recommended_symbols into config.yaml (review first without this)",
+        help="Merge recommended/expanded symbols into config.yaml universe",
+    )
+    research_p.add_argument(
+        "--apply-daily",
+        action="store_true",
+        help="Write today's 3 trade names to logs/daily_focus.json for the engine",
+    )
+    research_p.add_argument(
+        "--daily-n",
+        type=int,
+        default=3,
+        help="How many names to trade today (default 3)",
+    )
+    research_p.add_argument(
+        "--no-expand",
+        action="store_true",
+        help="Do not suggest symbols outside current config",
     )
 
     args = parser.parse_args(argv)
     config = load_config(args.config)
 
     if args.cmd == "research":
-        report = run_research(config, use_llm=bool(args.llm))
+        daily_n = max(1, int(args.daily_n))
+        report = run_research(
+            config,
+            use_llm=bool(args.llm),
+            daily_n=daily_n,
+            expand=not bool(args.no_expand),
+        )
         print(report.to_markdown(), flush=True)
-        if args.apply and report.recommended_symbols:
-            path = apply_recommended_symbols(
-                config.config_path, report.recommended_symbols
+        out: dict = {
+            "daily_picks": report.daily_picks,
+            "expanded_candidates": report.expanded_candidates,
+            "mode": report.mode,
+        }
+        if args.apply_daily and report.daily_picks:
+            focus_path = config.daily_focus.path or (
+                config.config_path.parent / "logs" / "daily_focus.json"
             )
-            print(
-                json.dumps(
-                    {
-                        "applied": True,
-                        "config": str(path),
-                        "symbols": report.recommended_symbols,
-                    },
-                    indent=2,
-                ),
-                flush=True,
-            )
+            write_daily_focus(report, focus_path, daily_n=daily_n)
+            out["daily_focus_path"] = str(focus_path)
+            out["daily_focus_applied"] = True
+        if args.apply and (
+            report.recommended_symbols or report.expanded_candidates or report.daily_picks
+        ):
+            path = apply_universe_from_report(config.config_path, report)
+            out["universe_applied"] = True
+            out["config"] = str(path)
         elif args.apply:
-            print(
-                json.dumps({"applied": False, "reason": "no recommended_symbols"}),
-                flush=True,
-            )
+            out["universe_applied"] = False
+        print(json.dumps(out, indent=2), flush=True)
         return 0
 
     engine = build_engine(config)
@@ -139,6 +168,14 @@ def main(argv: list[str] | None = None) -> int:
                         "enabled": config.selector.enabled,
                         "max_new_entries_per_tick": config.selector.max_new_entries_per_tick,
                         "prefer_relative_strength": config.selector.prefer_relative_strength,
+                    },
+                    "daily_focus": {
+                        "enabled": config.daily_focus.enabled,
+                        "path": str(config.daily_focus.path),
+                        "count": config.daily_focus.count,
+                        "active": load_daily_focus(config.daily_focus.path)
+                        if config.daily_focus.path
+                        else None,
                     },
                     "risk": {
                         "risk_per_trade_pct": config.risk.risk_per_trade_pct,

@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentic_trading.agent.research import load_daily_focus
 from agentic_trading.agent.selector import SelectorConfig, SetupSelectorAgent
 from agentic_trading.broker.agentic import AgenticBroker
 from agentic_trading.broker.base import Broker
@@ -114,6 +115,47 @@ class Engine:
         }
         self._plans_path.write_text(json.dumps(payload, indent=2))
 
+    def _apply_daily_focus(self, signals: list[Signal]) -> tuple[list[Signal], list[str]]:
+        """Block NEW entries outside today's research picks when focus is active."""
+        df = self.config.daily_focus
+        if not df.enabled or not df.path:
+            return signals, []
+        data = load_daily_focus(df.path)
+        if not data:
+            return signals, ["daily_focus: no file — all setups eligible"]
+        if data.get("expired"):
+            return signals, [
+                f"daily_focus: expired ({data.get('date')}) — run research --apply-daily"
+            ]
+        allowed = {
+            str(s).upper()
+            for s in (data.get("daily_picks") or [])
+            if str(s).strip()
+        }
+        if not allowed:
+            return signals, ["daily_focus: empty picks — all setups eligible"]
+        out: list[Signal] = []
+        notes = [f"daily_focus active: {', '.join(sorted(allowed))}"]
+        for s in signals:
+            if s.action == SignalAction.ENTER_LONG and s.symbol not in allowed:
+                out.append(
+                    Signal(
+                        symbol=s.symbol,
+                        action=SignalAction.FLAT,
+                        strength=0.0,
+                        reason=(
+                            f"daily_focus: not in today's {len(allowed)} "
+                            f"({', '.join(sorted(allowed))}); was: {s.reason}"
+                        ),
+                        ref_price=s.ref_price,
+                        stop_price=s.stop_price,
+                        target_price=s.target_price,
+                    )
+                )
+            else:
+                out.append(s)
+        return out, notes
+
     def _stop_target_exits(
         self,
         quotes: dict,
@@ -193,6 +235,10 @@ class Engine:
         # Merge: forced exits replace same-symbol signals
         forced_syms = {s.symbol for s in forced}
         signals = forced + [s for s in signals if s.symbol not in forced_syms]
+
+        # Daily focus: only NEW entries in today's research top-N (exits always ok)
+        signals, focus_notes = self._apply_daily_focus(signals)
+        notes.extend(focus_notes)
 
         # Selector agent: rank multi-name setups, keep best N new buys
         signals, sel_notes = self.selector.select(signals, quotes, history)
