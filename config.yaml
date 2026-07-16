@@ -49,8 +49,17 @@ account:
 broker:
   account_label: agentic
   allow_live: false
+  # Agentic account only (mask in UI; full number for MCP tools)
+  agentic_account_number: "616665162"
   settlement_days: 1
   trade_when_cash_available: true
+live:
+  portfolio_path: logs/live_portfolio.json
+  proposal_path: logs/option_proposal.json
+  max_option_premium: 100.0
+  max_option_contracts: 1
+  min_dte: 7
+  max_dte: 45
 logging:
   path: logs/decisions.jsonl
   paper_state_path: logs/paper_state.json

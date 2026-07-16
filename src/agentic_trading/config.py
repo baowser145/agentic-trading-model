@@ -73,6 +73,14 @@ class AppConfig:
     paper_state_path: Path | None = None
     selector: SelectorConfig = SelectorConfig()
     daily_focus: DailyFocusConfig = DailyFocusConfig()
+    # Live Agentic (MCP snapshot + supervised option proposals)
+    agentic_account_number: str = ""
+    live_portfolio_path: Path | None = None
+    option_proposal_path: Path | None = None
+    max_option_premium: float = 100.0
+    max_option_contracts: int = 1
+    option_min_dte: int = 7
+    option_max_dte: int = 45
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -185,6 +193,33 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         count=max(1, int(df.get("count", 3))),
     )
 
+    live_cfg = data.get("live") or {}
+    agentic_acct = str(
+        broker.get("agentic_account_number")
+        or live_cfg.get("agentic_account_number")
+        or ""
+    ).strip()
+
+    def _rel(raw: str, default: str) -> Path:
+        p = Path(raw or default)
+        if not p.is_absolute():
+            p = (cfg_path.parent / p).resolve()
+        return p
+
+    live_port_path = _rel(
+        str(live_cfg.get("portfolio_path", "logs/live_portfolio.json")),
+        "logs/live_portfolio.json",
+    )
+    opt_prop_path = _rel(
+        str(live_cfg.get("proposal_path", "logs/option_proposal.json")),
+        "logs/option_proposal.json",
+    )
+    max_opt_prem = float(live_cfg.get("max_option_premium", 100.0))
+    max_opt_prem = max(1.0, min(max_opt_prem, 500.0))
+    max_opt_contracts = max(1, min(int(live_cfg.get("max_option_contracts", 1)), 5))
+    opt_min_dte = max(1, int(live_cfg.get("min_dte", 7)))
+    opt_max_dte = max(opt_min_dte, int(live_cfg.get("max_dte", 45)))
+
     return AppConfig(
         trading_mode=mode,
         symbols=symbols,
@@ -208,4 +243,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         paper_state_path=state_path,
         selector=selector,
         daily_focus=daily_focus,
+        agentic_account_number=agentic_acct,
+        live_portfolio_path=live_port_path,
+        option_proposal_path=opt_prop_path,
+        max_option_premium=max_opt_prem,
+        max_option_contracts=max_opt_contracts,
+        option_min_dte=opt_min_dte,
+        option_max_dte=opt_max_dte,
     )
