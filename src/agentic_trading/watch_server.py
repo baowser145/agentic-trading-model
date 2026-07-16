@@ -165,9 +165,13 @@ def make_handler(snapshot_path: Path):
 
         def _cors(self) -> None:
             # Allow GitHub Pages (or any origin) to poll /api/status via HTTPS tunnel.
+            # ngrok-skip-browser-warning is required for free-tier ngrok from browsers.
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, ngrok-skip-browser-warning",
+            )
 
         def _send(self, code: int, body: bytes, content_type: str) -> None:
             self.send_response(code)

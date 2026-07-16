@@ -46,8 +46,12 @@ Pages is **HTTPS**. Browsers block `http://127.0.0.1` from an HTTPS page (mixed 
    ngrok http 8787
    ```
 
-3. Copy the `https://….ngrok-free.app` URL and open the Pages site.
+3. Copy the `https://….ngrok-free.app` (or `.ngrok-free.dev`) URL and open the Pages site.
 4. Paste `https://….ngrok-free.app/api/status` into **Data source** → **Save & use**.
+
+The Pages UI sends `ngrok-skip-browser-warning` so free-tier ngrok does not block the request.
+If you still see **Failed to fetch**, confirm watch is on the same port ngrok forwards to
+(e.g. `watch --port 8788` + `ngrok http 8788` — port **8787** may be taken by other apps).
 
 Or use a query param:
 

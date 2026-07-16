@@ -303,10 +303,23 @@ python -m agentic_trading watch --session-dir logs/paper_live
     }
 
     async function loadUrl(url) {
+      // Free ngrok returns an interstitial HTML page (ERR_NGROK_6024) for browser
+      // fetches unless this header is set — which looks like "Failed to fetch" / bad JSON
+      // from GitHub Pages. Harmless for non-ngrok URLs.
       const r = await fetch(url + (url.includes("?") ? "&" : "?") + "_=" + Date.now(), {
         cache: "no-store",
+        headers: {
+          "ngrok-skip-browser-warning": "true",
+        },
       });
       if (!r.ok) throw new Error("HTTP " + r.status + " for " + url);
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      if (ct.includes("text/html")) {
+        throw new Error(
+          "Got HTML instead of JSON (often free ngrok warning page). " +
+            "Use ngrok-skip header (this page does) or open local http://127.0.0.1:8788/"
+        );
+      }
       return r.json();
     }
 
