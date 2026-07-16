@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from typing import Literal
 
 from agentic_trading.models import Bar, Quote
+
+QuoteSource = Literal["fixture", "live"]
 
 
 class QuoteProvider(ABC):
@@ -124,3 +127,125 @@ class FixtureQuoteProvider(QuoteProvider):
                 )
             out[sym] = bars[-lookback:]
         return out
+
+
+class YahooLiveQuoteProvider(QuoteProvider):
+    """
+    Public Yahoo Finance quotes via yfinance (delayed; not broker fills).
+
+    Install: pip install yfinance
+    Use for paper multi-day sessions — never for Agentic live order pricing alone.
+    """
+
+    def __init__(self, history_period: str = "5d", history_interval: str = "5m") -> None:
+        self.history_period = history_period
+        self.history_interval = history_interval
+        self._yf = None
+
+    def _client(self):
+        if self._yf is None:
+            try:
+                import yfinance as yf  # type: ignore
+            except ImportError as e:
+                raise ImportError(
+                    "YahooLiveQuoteProvider requires yfinance. "
+                    "Install with: pip install yfinance"
+                ) from e
+            self._yf = yf
+        return self._yf
+
+    def get_quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        yf = self._client()
+        now = datetime.now(timezone.utc)
+        out: dict[str, Quote] = {}
+        # batch download last close-ish price
+        uniq = sorted({s.upper().strip() for s in symbols if s})
+        if not uniq:
+            return out
+        try:
+            data = yf.download(
+                tickers=" ".join(uniq),
+                period="1d",
+                interval="1m",
+                group_by="ticker",
+                auto_adjust=True,
+                threads=True,
+                progress=False,
+            )
+        except Exception:
+            data = None
+
+        for sym in uniq:
+            px: float | None = None
+            try:
+                if data is not None and not getattr(data, "empty", True):
+                    if len(uniq) == 1:
+                        col = data["Close"] if "Close" in data.columns else None
+                        if col is not None and len(col.dropna()):
+                            px = float(col.dropna().iloc[-1])
+                    else:
+                        # MultiIndex columns (ticker, field)
+                        if hasattr(data.columns, "levels") and sym in set(
+                            data.columns.get_level_values(0)
+                        ):
+                            series = data[sym]["Close"].dropna()
+                            if len(series):
+                                px = float(series.iloc[-1])
+                if px is None or px <= 0:
+                    t = yf.Ticker(sym)
+                    info = getattr(t, "fast_info", None)
+                    if info is not None:
+                        for key in ("last_price", "lastPrice", "regular_market_price"):
+                            v = None
+                            try:
+                                v = info[key] if hasattr(info, "__getitem__") else getattr(info, key, None)
+                            except Exception:
+                                v = getattr(info, key, None)
+                            if v is not None and float(v) > 0:
+                                px = float(v)
+                                break
+                    if px is None or px <= 0:
+                        hist = t.history(period="1d", interval="1m")
+                        if hist is not None and len(hist) and "Close" in hist.columns:
+                            px = float(hist["Close"].dropna().iloc[-1])
+            except Exception:
+                px = None
+            if px is not None and px > 0:
+                out[sym] = Quote(symbol=sym, price=float(px), ts=now)
+        return out
+
+    def get_history(self, symbols: list[str], lookback: int) -> dict[str, list[Bar]]:
+        yf = self._client()
+        now = datetime.now(timezone.utc)
+        out: dict[str, list[Bar]] = {}
+        lookback = max(lookback, 1)
+        uniq = sorted({s.upper().strip() for s in symbols if s})
+        for sym in uniq:
+            bars: list[Bar] = []
+            try:
+                t = yf.Ticker(sym)
+                hist = t.history(
+                    period=self.history_period,
+                    interval=self.history_interval,
+                    auto_adjust=True,
+                )
+                if hist is not None and len(hist) and "Close" in hist.columns:
+                    closes = [float(x) for x in hist["Close"].dropna().tolist()]
+                    for c in closes[-lookback:]:
+                        if c > 0:
+                            bars.append(Bar(symbol=sym, close=c, ts=now))
+            except Exception:
+                bars = []
+            # pad with last known if short (strategy needs min history)
+            if bars and len(bars) < lookback:
+                pad = bars[0]
+                bars = [pad] * (lookback - len(bars)) + bars
+            out[sym] = bars
+        return out
+
+
+def build_quote_provider(source: str = "fixture") -> QuoteProvider:
+    src = (source or "fixture").strip().lower()
+    if src in ("live", "yahoo", "yfinance"):
+        return YahooLiveQuoteProvider()
+    return FixtureQuoteProvider()

@@ -19,6 +19,13 @@ dev = [
 llm = [
   "openai>=1.40",
 ]
+live_quotes = [
+  "yfinance>=0.2.40",
+]
+# paper multi-day + local watch (quotes only; still paper broker)
+watch = [
+  "yfinance>=0.2.40",
+]
 
 [project.scripts]
 agentic-trading = "agentic_trading.__main__:main"

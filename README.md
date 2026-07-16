@@ -76,6 +76,59 @@ python -m agentic_trading run-once
 python -m agentic_trading run-loop --interval 5 --max-ticks 3
 ```
 
+### R1 / R2 market-filter guards (paper autopsy)
+
+After the fixture autopsy (too many first-tick `market red` soft-exits), the playbook defaults to:
+
+| Guard | Config | Default |
+|-------|--------|---------|
+| R1 consecutive red ticks before soft-exit | `strategy.market_red_exit_ticks` | **2** |
+| R1 min hold before soft-exit | `strategy.soft_exit_min_hold_ticks` | **2** |
+| R1 SMA buffer (exit-red only if below) | `strategy.market_red_sma_buffer_pct` | **0.1%** |
+| R2 re-entry cooldown after market-red exit | `strategy.reentry_cooldown_ticks` | **3** |
+
+Hard **stop / 2R target** still fire immediately via the engine.
+
+### Paper on **live** quotes (multi-day sample)
+
+Synthetic fixtures are for unit tests. For a real paper sample:
+
+```bash
+pip install yfinance
+# isolated journal (do not mix with old fixture trades)
+python -m agentic_trading run-loop \
+  --quotes live \
+  --session-dir logs/paper_live \
+  --interval 300 \
+  --until 2026-07-18
+# journal for that session
+python -m agentic_trading trades --session-dir logs/paper_live
+```
+
+Yahoo/yfinance prices are **delayed** and not broker fills. Still **paper** only (`allow_live: false`).
+
+### Watch the bot in a browser
+
+**Local (live paper state):**
+
+```bash
+# terminal A
+python -m agentic_trading run-loop --quotes live --session-dir logs/paper_live --interval 60
+
+# terminal B
+python -m agentic_trading watch --session-dir logs/paper_live
+# → http://127.0.0.1:8787/
+```
+
+**GitHub Pages (static demo UI):**
+
+1. Push the repo to GitHub.
+2. **Settings → Pages → Deploy from a branch → `/docs`**.
+3. Open `https://<user>.github.io/<repo>/` — shows `docs/sample_snapshot.json` by default.
+4. Optional live into that page: run local `watch`, tunnel with `ngrok http 8787`, paste the `https://…/api/status` URL in the page (or `?status=`).
+
+Details: [`docs/README.md`](docs/README.md). Pages hosts **UI only** — it does not run the bot.
+
 Without activating the venv:
 
 ```bash

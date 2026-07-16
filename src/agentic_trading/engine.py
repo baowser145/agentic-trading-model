@@ -33,12 +33,14 @@ class Engine:
         broker: Broker | None = None,
         quotes: QuoteProvider | None = None,
         logger: DecisionLogger | None = None,
+        watch_path: Path | None = None,
     ) -> None:
         self.config = config
         self.risk = RiskGate(config.risk)
         self.strategy = self._build_strategy(config)
         self.quotes = quotes or FixtureQuoteProvider()
         self.logger = logger or DecisionLogger(config.log_path)
+        self.watch_path = watch_path
         self.selector = SetupSelectorAgent(
             SelectorConfig(
                 enabled=config.selector.enabled,
@@ -342,8 +344,96 @@ class Engine:
             notes=notes,
         )
         self.logger.append(result)
+        self._write_watch_snapshot(result, quotes)
         return result
 
+    def _write_watch_snapshot(self, result: TickResult, quotes: dict) -> None:
+        """JSON snapshot for local watch UI / website poll."""
+        path = self.watch_path
+        if path is None and self.config.paper_state_path:
+            path = self.config.paper_state_path.parent / "watch_snapshot.json"
+        if path is None:
+            path = Path("logs/watch_snapshot.json")
+        try:
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            quote_src = type(self.quotes).__name__
+            journal = self.journal.summary()
+            strat = self.strategy
+            filter_state: dict = {}
+            if isinstance(strat, DayTradePlaybookStrategy):
+                filter_state = {
+                    "tick": strat._tick,
+                    "market_red_streak": strat._market_red_streak,
+                    "hold_ticks": dict(strat._hold_ticks),
+                    "cooldown_until": dict(strat._cooldown_until),
+                    "market_red_exit_ticks": strat.config.market_red_exit_ticks,
+                    "soft_exit_min_hold_ticks": strat.config.soft_exit_min_hold_ticks,
+                    "reentry_cooldown_ticks": strat.config.reentry_cooldown_ticks,
+                }
+            payload = {
+                "ts": result.ts.isoformat(),
+                "mode": result.mode.value,
+                "quote_provider": quote_src,
+                "equity": round(result.portfolio.equity, 4),
+                "cash": round(result.portfolio.cash, 4),
+                "buying_power": round(result.portfolio.buying_power, 4),
+                "halted": result.portfolio.halted,
+                "halt_reason": result.portfolio.halt_reason,
+                "positions": {
+                    k: {
+                        "qty": round(v.quantity, 6),
+                        "avg_cost": round(v.avg_cost, 4),
+                        "mark": round(quotes[k].price, 4) if k in quotes else None,
+                    }
+                    for k, v in result.portfolio.positions.items()
+                    if v.quantity != 0
+                },
+                "signals": [
+                    {
+                        "symbol": s.symbol,
+                        "action": s.action.value,
+                        "reason": s.reason,
+                        "ref_price": s.ref_price,
+                    }
+                    for s in result.signals
+                ],
+                "fills": [
+                    {
+                        "symbol": f.symbol,
+                        "side": f.side.value,
+                        "qty": f.quantity,
+                        "price": f.price,
+                    }
+                    for f in result.fills
+                ],
+                "notes": result.notes,
+                "open_plans": {
+                    sym: {
+                        "entry": p.entry,
+                        "stop": p.stop,
+                        "target": p.target,
+                        "quantity": p.quantity,
+                    }
+                    for sym, p in self.open_plans.items()
+                },
+                "filter_state": filter_state,
+                "journal": {
+                    "closed_trades": journal.get("closed_trades"),
+                    "win_rate": journal.get("win_rate"),
+                    "total_pnl": journal.get("total_pnl"),
+                    "open_symbols": journal.get("open_symbols"),
+                    "recent": (journal.get("recent") or [])[-5:],
+                },
+            }
+            path.write_text(json.dumps(payload, indent=2))
+        except OSError:
+            pass
 
-def build_engine(config: AppConfig) -> Engine:
-    return Engine(config)
+
+def build_engine(
+    config: AppConfig,
+    quotes: QuoteProvider | None = None,
+    watch_path: Path | None = None,
+) -> Engine:
+    return Engine(config, quotes=quotes, watch_path=watch_path)

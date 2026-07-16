@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Paper bot watch</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #141b2d;
+      --text: #e8eefc;
+      --muted: #8b9bb8;
+      --green: #3dd68c;
+      --red: #ff6b6b;
+      --accent: #6ea8fe;
+      --border: #243049;
+      --warn: #f0c674;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem 1.5rem;
+      align-items: baseline;
+    }
+    h1 { font-size: 1.15rem; margin: 0; font-weight: 650; }
+    .muted { color: var(--muted); font-size: .9rem; }
+    main { padding: 1rem 1.25rem; display: grid; gap: 1rem; }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .card h2 {
+      margin: 0 0 .6rem;
+      font-size: .85rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .big { font-size: 1.6rem; font-weight: 700; }
+    .pos, .sig, .fill, .trade {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .82rem;
+      padding: .35rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pos:last-child, .sig:last-child, .fill:last-child, .trade:last-child {
+      border-bottom: 0;
+    }
+    .tag {
+      display: inline-block;
+      padding: .1rem .4rem;
+      border-radius: 6px;
+      font-size: .75rem;
+    }
+    .tag.enter { background: #1b3d2f; color: var(--green); }
+    .tag.exit { background: #3d1b1b; color: var(--red); }
+    .tag.hold { background: #243049; color: var(--muted); }
+    .tag.flat { background: #1a2236; color: var(--muted); }
+    .ok { color: var(--green); }
+    .bad { color: var(--red); }
+    .banner {
+      padding: .75rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #12192b;
+      font-size: .9rem;
+    }
+    .banner.warn { border-color: #5a4a20; color: var(--warn); }
+    .banner.err { border-color: #5a2a2a; color: var(--red); }
+    .banner.ok { border-color: #1b3d2f; color: var(--green); }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      align-items: center;
+    }
+    input[type="url"], input[type="text"] {
+      flex: 1 1 280px;
+      min-width: 200px;
+      background: #0d1424;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: .5rem .65rem;
+      font-size: .9rem;
+    }
+    button, .btn {
+      background: #1e2a44;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .5rem .8rem;
+      font-size: .85rem;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #1b3d5c;
+      border-color: #2d5a8a;
+      color: #cfe3ff;
+    }
+    button:hover { filter: brightness(1.08); }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .82em;
+      background: #0d1424;
+      padding: .1rem .3rem;
+      border-radius: 4px;
+    }
+    a { color: var(--accent); }
+    details summary { cursor: pointer; color: var(--muted); }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      font-size: .8rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Paper bot watch</h1>
+    <span class="muted" id="meta">loading…</span>
+    <span class="muted">poll <span id="pollLabel">2s</span></span>
+  </header>
+  <main>
+    <div id="banner" class="banner warn"></div>
+
+    <div class="card">
+      <h2>Data source</h2>
+      <div class="controls" style="margin-bottom:.6rem">
+        <button type="button" id="btnSample" class="primary">Demo sample</button>
+        <button type="button" id="btnLive">Live status URL</button>
+        <button type="button" id="btnClear">Clear saved URL</button>
+      </div>
+      <div class="controls">
+        <input id="statusUrl" type="url" placeholder="https://…/api/status  or  http://127.0.0.1:8787/api/status" />
+        <button type="button" id="btnSave" class="primary">Save &amp; use</button>
+      </div>
+      <p class="muted" style="margin:.65rem 0 0">
+        Default on GitHub Pages: bundled <code>sample_snapshot.json</code> (demo only).
+        Live needs a reachable <strong>HTTPS</strong> status URL (GitHub Pages is HTTPS — browsers block
+        <code>http://localhost</code> mixed content). Use a tunnel (ngrok / Cloudflare) or open the
+        local watch UI instead.
+      </p>
+      <details style="margin-top:.6rem">
+        <summary>How to wire live data</summary>
+        <pre style="margin-top:.5rem"># On your machine (paper bot)
+python -m agentic_trading run-loop --quotes live --session-dir logs/paper_live --interval 60
+
+# Local UI (easiest — no GitHub needed for live)
+python -m agentic_trading watch --session-dir logs/paper_live
+# → http://127.0.0.1:8787/
+
+# Optional: expose HTTPS for this GitHub Pages page
+# ngrok http 8787
+# then paste https://xxxx.ngrok-free.app/api/status above
+        </pre>
+      </details>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h2>Equity</h2><div class="big" id="equity">—</div></div>
+      <div class="card"><h2>Cash / BP</h2><div class="big" id="cash">—</div></div>
+      <div class="card"><h2>Journal PnL</h2><div class="big" id="pnl">—</div></div>
+      <div class="card"><h2>Win rate</h2><div class="big" id="wr">—</div></div>
+    </div>
+    <div class="card"><h2>Positions</h2><div id="positions" class="muted">none</div></div>
+    <div class="card"><h2>Signals (last tick)</h2><div id="signals" class="muted">—</div></div>
+    <div class="card"><h2>Fills (last tick)</h2><div id="fills" class="muted">—</div></div>
+    <div class="card"><h2>Filter state (R1/R2)</h2><pre id="filter"></pre></div>
+    <div class="card"><h2>Recent closed trades</h2><div id="recent" class="muted">—</div></div>
+    <div class="card"><h2>Notes</h2><div id="notes" class="muted">—</div></div>
+  </main>
+  <script>
+    const SAMPLE_URL = "sample_snapshot.json";
+    const STORAGE_KEY = "paperBotStatusUrl";
+    const POLL_MS = 2000;
+
+    const money = (n) =>
+      n == null || Number.isNaN(n)
+        ? "—"
+        : (n < 0 ? "-$" : "$") + Math.abs(n).toFixed(2);
+    const pct = (n) => (n == null ? "—" : (n * 100).toFixed(1) + "%");
+    const tag = (a) => {
+      const c = (a || "").includes("enter")
+        ? "enter"
+        : (a || "").includes("exit")
+          ? "exit"
+          : (a || "") === "hold"
+            ? "hold"
+            : "flat";
+      return `<span class="tag ${c}">${a || "?"}</span>`;
+    };
+
+    function isGithubPages() {
+      return location.hostname.endsWith("github.io");
+    }
+
+    function isHttpsPage() {
+      return location.protocol === "https:";
+    }
+
+    function getMode() {
+      const params = new URLSearchParams(location.search);
+      if (params.get("sample") === "1") return { type: "sample" };
+      const q = params.get("status") || params.get("url");
+      if (q) return { type: "live", url: q };
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return { type: "live", url: saved };
+      return { type: "sample" };
+    }
+
+    function setBanner(kind, text) {
+      const el = document.getElementById("banner");
+      el.className = "banner " + (kind || "warn");
+      el.textContent = text;
+    }
+
+    function render(d, sourceLabel) {
+      document.getElementById("meta").textContent =
+        `${d.mode || "?"} · ${d.quote_provider || "?"} · ${d.ts || "—"} · ${sourceLabel}`;
+      document.getElementById("equity").textContent = money(d.equity);
+      document.getElementById("cash").textContent =
+        money(d.cash) + " / " + money(d.buying_power);
+      const j = d.journal || {};
+      const tp = j.total_pnl;
+      const el = document.getElementById("pnl");
+      el.textContent = money(tp);
+      el.className = "big " + (tp > 0 ? "ok" : tp < 0 ? "bad" : "");
+      document.getElementById("wr").textContent =
+        pct(j.win_rate) + ` (${j.closed_trades ?? 0} closed)`;
+
+      const pos = d.positions || {};
+      const pkeys = Object.keys(pos);
+      document.getElementById("positions").innerHTML = pkeys.length
+        ? pkeys
+            .map((s) => {
+              const p = pos[s];
+              return `<div class="pos"><b>${s}</b> qty=${p.qty} avg=${p.avg_cost} mark=${p.mark ?? "—"}</div>`;
+            })
+            .join("")
+        : '<span class="muted">flat</span>';
+
+      const sigs = d.signals || [];
+      document.getElementById("signals").innerHTML = sigs.length
+        ? sigs
+            .map(
+              (s) =>
+                `<div class="sig">${tag(s.action)} <b>${s.symbol}</b> @ ${s.ref_price} — ${s.reason || ""}</div>`
+            )
+            .join("")
+        : "—";
+
+      const fills = d.fills || [];
+      document.getElementById("fills").innerHTML = fills.length
+        ? fills
+            .map(
+              (f) =>
+                `<div class="fill">${f.side} <b>${f.symbol}</b> ${f.qty} @ ${f.price}</div>`
+            )
+            .join("")
+        : "none this tick";
+
+      document.getElementById("filter").textContent = JSON.stringify(
+        d.filter_state || {},
+        null,
+        2
+      );
+
+      const recent = (j.recent || []).slice().reverse();
+      document.getElementById("recent").innerHTML = recent.length
+        ? recent
+            .map((t) => {
+              const cls = t.pnl >= 0 ? "ok" : "bad";
+              return `<div class="trade"><b>${t.symbol}</b> <span class="${cls}">${money(t.pnl)}</span> ${t.exit_reason || ""}</div>`;
+            })
+            .join("")
+        : "no closed trades yet";
+
+      const notes = d.notes || [];
+      document.getElementById("notes").innerHTML = notes.length
+        ? notes.map((n) => `<div class="sig">${n}</div>`).join("")
+        : "—";
+    }
+
+    async function loadUrl(url) {
+      const r = await fetch(url + (url.includes("?") ? "&" : "?") + "_=" + Date.now(), {
+        cache: "no-store",
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status + " for " + url);
+      return r.json();
+    }
+
+    async function refresh() {
+      const mode = getMode();
+      const input = document.getElementById("statusUrl");
+      if (mode.type === "live") input.value = mode.url;
+
+      try {
+        if (mode.type === "sample") {
+          const d = await loadUrl(SAMPLE_URL);
+          render(d, "demo sample");
+          setBanner(
+            "ok",
+            isGithubPages()
+              ? "GitHub Pages demo mode — showing sample_snapshot.json (not your live paper bot)."
+              : "Demo mode — bundled sample_snapshot.json."
+          );
+          return;
+        }
+
+        // Live URL checks
+        if (isHttpsPage() && mode.url.startsWith("http://")) {
+          setBanner(
+            "err",
+            "This page is HTTPS, so the browser blocks http:// status URLs (mixed content). " +
+              "Use an https:// tunnel (ngrok/cloudflared) or open local watch at http://127.0.0.1:8787/"
+          );
+          return;
+        }
+
+        const d = await loadUrl(mode.url);
+        if (d.error === "no_snapshot") {
+          setBanner(
+            "warn",
+            "Status endpoint reachable but no snapshot yet. Start run-loop so watch_snapshot.json is written."
+          );
+          render(
+            {
+              mode: "paper",
+              equity: null,
+              cash: null,
+              buying_power: null,
+              positions: {},
+              signals: [],
+              fills: [],
+              notes: [d.hint || d.error],
+              filter_state: {},
+              journal: {},
+            },
+            "live (empty)"
+          );
+          return;
+        }
+        render(d, "live");
+        setBanner("ok", "Live status: " + mode.url);
+      } catch (e) {
+        setBanner(
+          "err",
+          "Could not load status (" +
+            e.message +
+            "). Falling back to sample if available. " +
+            (mode.type === "live"
+              ? "Check CORS, HTTPS, and that the bot/watch server is running."
+              : "")
+        );
+        try {
+          const d = await loadUrl(SAMPLE_URL);
+          render(d, "sample fallback");
+        } catch (_) {
+          document.getElementById("meta").textContent = "no data";
+        }
+      }
+    }
+
+    document.getElementById("btnSample").onclick = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      const u = new URL(location.href);
+      u.searchParams.delete("status");
+      u.searchParams.delete("url");
+      u.searchParams.set("sample", "1");
+      history.replaceState(null, "", u);
+      refresh();
+    };
+    document.getElementById("btnLive").onclick = () => {
+      document.getElementById("statusUrl").focus();
+    };
+    document.getElementById("btnClear").onclick = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      document.getElementById("statusUrl").value = "";
+      const u = new URL(location.href);
+      u.searchParams.delete("status");
+      u.searchParams.delete("url");
+      u.searchParams.delete("sample");
+      history.replaceState(null, "", u);
+      refresh();
+    };
+    document.getElementById("btnSave").onclick = () => {
+      const url = document.getElementById("statusUrl").value.trim();
+      if (!url) return;
+      localStorage.setItem(STORAGE_KEY, url);
+      const u = new URL(location.href);
+      u.searchParams.delete("sample");
+      u.searchParams.set("status", url);
+      history.replaceState(null, "", u);
+      refresh();
+    };
+
+    document.getElementById("pollLabel").textContent = POLL_MS / 1000 + "s";
+    const mode0 = getMode();
+    if (mode0.type === "live") document.getElementById("statusUrl").value = mode0.url;
+    refresh();
+    setInterval(refresh, POLL_MS);
+  </script>
+</body>
+</html>

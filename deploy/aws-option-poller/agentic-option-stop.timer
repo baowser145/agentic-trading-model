@@ -1,0 +1,12 @@
+[Unit]
+Description=Run agentic option stop poller every 2 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=agentic-option-stop.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

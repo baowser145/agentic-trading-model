@@ -1,0 +1,19 @@
+[Unit]
+Description=Agentic option stop poller (alert only, no trades)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agentic-option-poller
+EnvironmentFile=-/home/ubuntu/agentic-option-poller/.env
+Environment=WATCH_FILE=/home/ubuntu/agentic-option-poller/watch.json
+Environment=STATE_DIR=/home/ubuntu/agentic-option-poller/state
+ExecStart=/home/ubuntu/agentic-option-poller/.venv/bin/python /home/ubuntu/agentic-option-poller/option_stop_poller.py
+# Exit 2 = stop triggered / alert sent — treat as success for timer
+SuccessExitStatus=0 2
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

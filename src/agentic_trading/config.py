@@ -36,6 +36,12 @@ class StrategyConfig:
     market_symbol: str = "SPY"
     range_lookback: int = 8  # bars for range high/low (breakout / stop)
     pullback_tol_pct: float = 0.004  # how close to SMA counts as pullback
+    # R1: market-red soft-exit hysteresis (autopsy: first red tick churn)
+    market_red_exit_ticks: int = 2  # consecutive red ticks before soft-exit
+    soft_exit_min_hold_ticks: int = 2  # no filter soft-exit until held this many ticks
+    market_red_sma_buffer_pct: float = 0.001  # exit-red only if last < SMA*(1-buffer)
+    # R2: re-entry cooldown after market-red soft-exit
+    reentry_cooldown_ticks: int = 3
 
 
 @dataclass(frozen=True)
@@ -230,6 +236,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             market_symbol=str(strat.get("market_symbol", "SPY")).upper(),
             range_lookback=int(strat.get("range_lookback", 8)),
             pullback_tol_pct=float(strat.get("pullback_tol_pct", 0.004)),
+            market_red_exit_ticks=max(1, int(strat.get("market_red_exit_ticks", 2))),
+            soft_exit_min_hold_ticks=max(0, int(strat.get("soft_exit_min_hold_ticks", 2))),
+            market_red_sma_buffer_pct=max(
+                0.0, float(strat.get("market_red_sma_buffer_pct", 0.001))
+            ),
+            reentry_cooldown_ticks=max(0, int(strat.get("reentry_cooldown_ticks", 3))),
         ),
         risk=_clamp_risk(data.get("risk") or {}),
         starting_equity=float(account.get("starting_equity", 1000.0)),

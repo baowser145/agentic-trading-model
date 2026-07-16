@@ -1,0 +1,78 @@
+{
+  "ts": "2026-07-16T20:09:59.878870+00:00",
+  "mode": "paper",
+  "quote_provider": "YahooLiveQuoteProvider",
+  "equity": 1000.0,
+  "cash": 0.0,
+  "buying_power": 0.0,
+  "halted": false,
+  "halt_reason": null,
+  "positions": {
+    "AAPL": {
+      "qty": 1.500285,
+      "avg_cost": 333.27,
+      "mark": 333.27
+    },
+    "MA": {
+      "qty": 0.906627,
+      "avg_cost": 551.495,
+      "mark": 551.495
+    }
+  },
+  "signals": [
+    {
+      "symbol": "AAPL",
+      "action": "hold",
+      "reason": "hold long; engine manages stop/target; market green: SPY>SMA10",
+      "ref_price": 333.27
+    },
+    {
+      "symbol": "MA",
+      "action": "hold",
+      "reason": "hold long; engine manages stop/target; market green: SPY>SMA10",
+      "ref_price": 551.495
+    },
+    {
+      "symbol": "MSFT",
+      "action": "flat",
+      "reason": "no setup; market green: SPY>SMA10",
+      "ref_price": 401.12
+    }
+  ],
+  "fills": [],
+  "notes": [
+    "daily_focus active: AAPL, MA, MSFT",
+    "selector: no entry candidates",
+    "SAMPLE SNAPSHOT for GitHub Pages demo — not live broker data"
+  ],
+  "open_plans": {
+    "AAPL": {
+      "entry": 333.27,
+      "stop": 330.6951,
+      "target": 338.4198,
+      "quantity": 1.500285
+    },
+    "MA": {
+      "entry": 551.495,
+      "stop": 547.2778,
+      "target": 559.9293,
+      "quantity": 0.906627
+    }
+  },
+  "filter_state": {
+    "tick": 4,
+    "market_red_streak": 0,
+    "hold_ticks": { "AAPL": 3, "MA": 3 },
+    "cooldown_until": {},
+    "market_red_exit_ticks": 2,
+    "soft_exit_min_hold_ticks": 2,
+    "reentry_cooldown_ticks": 3
+  },
+  "journal": {
+    "closed_trades": 0,
+    "win_rate": null,
+    "total_pnl": 0,
+    "open_symbols": ["AAPL", "MA"],
+    "recent": []
+  }
+}

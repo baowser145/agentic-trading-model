@@ -2,20 +2,20 @@ trading_mode: paper
 symbols:
 - SPY
 - AAPL
-- MSFT
-- NVDA
-- COST
-- V
 - MA
-- BAC
-- WMT
+- MSFT
+- UNH
+- NFLX
+- AVGO
+- SMH
+- JNJ
+- ORCL
+- NVDA
+- V
 - AMZN
 - META
 - GOOGL
 - QQQ
-- XLK
-- JPM
-- AMD
 strategy:
   name: day_trade_playbook
   market_symbol: SPY
@@ -23,6 +23,12 @@ strategy:
   lookback_bars: 30
   range_lookback: 8
   pullback_tol_pct: 0.004
+  # R1: don't soft-exit on first market-red tick (paper autopsy fix)
+  market_red_exit_ticks: 2
+  soft_exit_min_hold_ticks: 2
+  market_red_sma_buffer_pct: 0.001
+  # R2: block re-entry after market-red soft-exit
+  reentry_cooldown_ticks: 3
 selector:
   enabled: true
   max_new_entries_per_tick: 2
@@ -49,8 +55,7 @@ account:
 broker:
   account_label: agentic
   allow_live: false
-  # Agentic account only (mask in UI; full number for MCP tools)
-  agentic_account_number: "616665162"
+  agentic_account_number: '616665162'
   settlement_days: 1
   trade_when_cash_available: true
 live:
@@ -58,7 +63,6 @@ live:
   proposal_path: logs/option_proposal.json
   max_option_premium: 100.0
   max_option_contracts: 1
-  # Quick-turn long premium only (7–31 calendar days)
   min_dte: 7
   max_dte: 31
 logging:

@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -15,7 +16,7 @@ from agentic_trading.agent.research import (
     run_research,
     write_daily_focus,
 )
-from agentic_trading.config import load_config
+from agentic_trading.config import AppConfig, load_config
 from agentic_trading.engine import build_engine
 from agentic_trading.live.pick_contract import pick_option_contract, save_picked
 from agentic_trading.live.portfolio import (
@@ -30,8 +31,24 @@ from agentic_trading.live.supervised_review import (
     record_review_result,
     save_review_request,
 )
+from agentic_trading.market.quotes import build_quote_provider
 
 ET = ZoneInfo("America/New_York")
+
+
+def _with_session_dir(config: AppConfig, session_dir: Path | None) -> AppConfig:
+    """Redirect paper state + decision log + journal into an isolated directory."""
+    if session_dir is None:
+        return config
+    d = Path(session_dir)
+    if not d.is_absolute():
+        d = (config.config_path.parent / d).resolve()
+    d.mkdir(parents=True, exist_ok=True)
+    return replace(
+        config,
+        log_path=d / "decisions.jsonl",
+        paper_state_path=d / "paper_state.json",
+    )
 
 
 def _print_tick(result) -> None:
@@ -80,8 +97,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("run-once", help="Run a single strategy/risk/broker tick")
+    def _add_quote_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--quotes",
+            type=str,
+            default="fixture",
+            choices=["fixture", "live", "yahoo"],
+            help="Quote source: fixture (synthetic) or live/yahoo (yfinance, delayed)",
+        )
+        p.add_argument(
+            "--session-dir",
+            type=Path,
+            default=None,
+            help="Isolate paper state/journal under this dir (e.g. logs/paper_live)",
+        )
+
+    once_p = sub.add_parser("run-once", help="Run a single strategy/risk/broker tick")
+    _add_quote_args(once_p)
     loop_p = sub.add_parser("run-loop", help="Run ticks on an interval")
+    _add_quote_args(loop_p)
     loop_p.add_argument(
         "--interval",
         type=int,
@@ -99,6 +133,28 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default=None,
         help="Stop after this local date (YYYY-MM-DD, America/New_York end of day)",
+    )
+    watch_p = sub.add_parser(
+        "watch",
+        help="Local website to watch paper bot (serves watch_snapshot.json)",
+    )
+    watch_p.add_argument(
+        "--port",
+        type=int,
+        default=8787,
+        help="Port (default 8787)",
+    )
+    watch_p.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Bind host (default 127.0.0.1 — local only)",
+    )
+    watch_p.add_argument(
+        "--session-dir",
+        type=Path,
+        default=None,
+        help="Session dir with watch_snapshot.json (default: config paper log dir)",
     )
     status_p = sub.add_parser(
         "status",
@@ -144,9 +200,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not suggest symbols outside current config",
     )
-    sub.add_parser(
+    trades_p = sub.add_parser(
         "trades",
         help="Trade journal summary (for early backtest review)",
+    )
+    trades_p.add_argument(
+        "--session-dir",
+        type=Path,
+        default=None,
+        help="Read journal from isolated session dir (e.g. logs/paper_live)",
     )
 
     prop_p = sub.add_parser(
@@ -491,7 +553,36 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(out, indent=2), flush=True)
         return 0
 
-    engine = build_engine(config)
+    if args.cmd == "watch":
+        from agentic_trading.watch_server import serve
+
+        snap = None
+        if getattr(args, "session_dir", None):
+            d = Path(args.session_dir)
+            if not d.is_absolute():
+                d = (config.config_path.parent / d).resolve()
+            snap = d / "watch_snapshot.json"
+        elif config.paper_state_path:
+            snap = config.paper_state_path.parent / "watch_snapshot.json"
+        else:
+            snap = Path("logs/watch_snapshot.json")
+        serve(snap, host=args.host, port=args.port)
+        return 0
+
+    # Optional quote source + isolated session dir for paper runs
+    session_dir = getattr(args, "session_dir", None)
+    config = _with_session_dir(config, session_dir)
+    quote_src = getattr(args, "quotes", None) or "fixture"
+    quotes = None
+    watch_path = None
+    if args.cmd in ("run-once", "run-loop", "trades", "status"):
+        if args.cmd in ("run-once", "run-loop"):
+            quotes = build_quote_provider(quote_src)
+            if config.paper_state_path:
+                watch_path = config.paper_state_path.parent / "watch_snapshot.json"
+        engine = build_engine(config, quotes=quotes, watch_path=watch_path)
+    else:
+        engine = build_engine(config)
 
     if args.cmd == "trades":
         print(json.dumps(engine.journal.summary(), indent=2), flush=True)
@@ -604,16 +695,32 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "event": "session_start",
                     "mode": config.trading_mode.value,
+                    "quotes": quote_src,
+                    "quote_provider": type(engine.quotes).__name__,
                     "interval_seconds": interval,
                     "until": until_dt.isoformat() if until_dt else None,
                     "settlement_days": config.settlement_days,
                     "trade_when_cash_available": config.trade_when_cash_available,
                     "log_path": str(config.log_path),
                     "paper_state_path": str(config.paper_state_path),
+                    "watch_snapshot": str(watch_path) if watch_path else None,
+                    "watch_hint": "python -m agentic_trading watch"
+                    + (
+                        f" --session-dir {session_dir}"
+                        if session_dir
+                        else ""
+                    ),
+                    "r1_r2": {
+                        "market_red_exit_ticks": config.strategy.market_red_exit_ticks,
+                        "soft_exit_min_hold_ticks": config.strategy.soft_exit_min_hold_ticks,
+                        "market_red_sma_buffer_pct": config.strategy.market_red_sma_buffer_pct,
+                        "reentry_cooldown_ticks": config.strategy.reentry_cooldown_ticks,
+                    },
                     "note": (
                         "Trade immediately when cash is available in the account "
                         f"(trade_when_cash_available={config.trade_when_cash_available}). "
-                        f"Settlement still tracked as T+{config.settlement_days} for status."
+                        f"Settlement still tracked as T+{config.settlement_days} for status. "
+                        "Paper only unless allow_live + explicit live path."
                     ),
                 }
             ),
