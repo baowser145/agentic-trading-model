@@ -101,7 +101,7 @@ def propose_option(
     n_contracts = int(contracts if contracts is not None else 1)
     n_contracts = max(1, min(n_contracts, int(getattr(config, "max_option_contracts", 1))))
     dte_lo = int(min_dte if min_dte is not None else getattr(config, "option_min_dte", 7))
-    dte_hi = int(max_dte if max_dte is not None else getattr(config, "option_max_dte", 45))
+    dte_hi = int(max_dte if max_dte is not None else getattr(config, "option_max_dte", 31))
     if dte_lo < 1:
         dte_lo = 1
     if dte_hi < dte_lo:

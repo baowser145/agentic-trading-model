@@ -80,7 +80,7 @@ class AppConfig:
     max_option_premium: float = 100.0
     max_option_contracts: int = 1
     option_min_dte: int = 7
-    option_max_dte: int = 45
+    option_max_dte: int = 31
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -218,7 +218,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     max_opt_prem = max(1.0, min(max_opt_prem, 500.0))
     max_opt_contracts = max(1, min(int(live_cfg.get("max_option_contracts", 1)), 5))
     opt_min_dte = max(1, int(live_cfg.get("min_dte", 7)))
-    opt_max_dte = max(opt_min_dte, int(live_cfg.get("max_dte", 45)))
+    opt_max_dte = max(opt_min_dte, int(live_cfg.get("max_dte", 31)))
 
     return AppConfig(
         trading_mode=mode,

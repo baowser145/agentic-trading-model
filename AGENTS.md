@@ -60,7 +60,9 @@ Never place on non-agentic accounts. Never enable `allow_live` / thrash stock da
 - Paper is default (`trading_mode: paper`, `allow_live: false`).
 - Agentic account only for live MCP trades.
 - Options automation is **long premium / single-leg Level 2** first; no multi-leg via MCP.
-- No 0DTE in default playbook.
+- No 0DTE. Default long-premium window: **7–31 DTE** only (quick turn).
+- Daily options rule: **at most one** open long-premium idea. If one is open, manage it (do not add) until exit rules hit.
+- Daily scan universe: liquid focus names (research top-3) + any single-name holdings on Agentic; pick **one** best debit call/put or **hold**.
 - Never commit `.env` or secrets.
 - Prefer small fixes; don’t expand scope without user ask.
 

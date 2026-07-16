@@ -58,8 +58,9 @@ live:
   proposal_path: logs/option_proposal.json
   max_option_premium: 100.0
   max_option_contracts: 1
+  # Quick-turn long premium only (7–31 calendar days)
   min_dte: 7
-  max_dte: 45
+  max_dte: 31
 logging:
   path: logs/decisions.jsonl
   paper_state_path: logs/paper_state.json

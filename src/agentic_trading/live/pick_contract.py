@@ -68,7 +68,7 @@ def pick_option_contract(
     option_type: str = "call",
     strike_hint: float | None = None,
     min_dte: int = 7,
-    max_dte: int = 45,
+    max_dte: int = 31,
     underlying_price: float | None = None,
     max_candidates: int = 5,
 ) -> PickedContract | None:

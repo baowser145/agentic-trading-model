@@ -129,7 +129,7 @@ def test_pick_option_contract_prefers_near_hint():
         },
     ]
     picked = pick_option_contract(
-        instruments, option_type="call", strike_hint=195.0, min_dte=7, max_dte=45
+        instruments, option_type="call", strike_hint=195.0, min_dte=7, max_dte=31
     )
     assert picked is not None
     assert picked.option_id == "near"
