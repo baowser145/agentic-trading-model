@@ -17,12 +17,19 @@ from agentic_trading.agent.research import (
 )
 from agentic_trading.config import load_config
 from agentic_trading.engine import build_engine
+from agentic_trading.live.pick_contract import pick_option_contract, save_picked
 from agentic_trading.live.portfolio import (
     load_live_portfolio,
     save_live_portfolio,
     snapshot_from_broker_payloads,
 )
 from agentic_trading.live.propose_option import propose_option, save_proposal
+from agentic_trading.live.session import build_session_refresh_plan, save_session_plan
+from agentic_trading.live.supervised_review import (
+    build_review_request,
+    record_review_result,
+    save_review_request,
+)
 
 ET = ZoneInfo("America/New_York")
 
@@ -190,8 +197,186 @@ def main(argv: list[str] | None = None) -> int:
         help="Override agentic account number",
     )
 
+    sess_p = sub.add_parser(
+        "session-refresh",
+        help="Print/write Agentic session bootstrap plan (Grok auto-refresh checklist)",
+    )
+    sess_p.add_argument(
+        "--stale-seconds",
+        type=int,
+        default=900,
+        help="Refresh if snapshot older than this (default 900s)",
+    )
+    sess_p.add_argument(
+        "--min-bp",
+        type=float,
+        default=50.0,
+        help="Min buying power to treat options path as free (default 50)",
+    )
+    sess_p.add_argument(
+        "--no-write",
+        action="store_true",
+        help="Do not write logs/session_refresh_plan.json",
+    )
+
+    pick_p = sub.add_parser(
+        "pick-option-contract",
+        help="Pick best long-premium contract from get_option_instruments JSON",
+    )
+    pick_p.add_argument(
+        "--file",
+        type=Path,
+        required=True,
+        help="JSON file of instruments (MCP get_option_instruments response)",
+    )
+    pick_p.add_argument("--type", dest="option_type", default="call", choices=["call", "put"])
+    pick_p.add_argument("--strike-hint", type=float, default=None)
+    pick_p.add_argument("--underlying-price", type=float, default=None)
+    pick_p.add_argument("--min-dte", type=int, default=None)
+    pick_p.add_argument("--max-dte", type=int, default=None)
+    pick_p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Write pick JSON (default logs/picked_contract.json)",
+    )
+
+    prep_p = sub.add_parser(
+        "prepare-option-review",
+        help="Build review_option_order args if BP free (never places)",
+    )
+    prep_p.add_argument("--option-id", type=str, required=True)
+    prep_p.add_argument("--price", type=float, required=True, help="Limit debit per contract")
+    prep_p.add_argument("--symbol", type=str, required=True)
+    prep_p.add_argument("--type", dest="option_type", default="call", choices=["call", "put"])
+    prep_p.add_argument("--contracts", type=int, default=1)
+    prep_p.add_argument("--max-premium", type=float, default=None)
+    prep_p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Write review request (default logs/option_review_request.json)",
+    )
+
+    rec_p = sub.add_parser(
+        "record-option-review",
+        help="Save MCP review_option_order response for audit (never places)",
+    )
+    rec_p.add_argument(
+        "--file",
+        type=Path,
+        required=True,
+        help="JSON file with review_option_order response body",
+    )
+    rec_p.add_argument(
+        "--request-file",
+        type=Path,
+        default=None,
+        help="Optional prepare-option-review JSON to attach",
+    )
+    rec_p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Default logs/option_review_result.json",
+    )
+
     args = parser.parse_args(argv)
     config = load_config(args.config)
+
+    if args.cmd == "session-refresh":
+        plan = build_session_refresh_plan(
+            config,
+            stale_after_seconds=max(60, int(args.stale_seconds)),
+            min_bp_for_options=float(args.min_bp),
+        )
+        wrote = None
+        if not args.no_write:
+            out_p = config.config_path.parent / "logs" / "session_refresh_plan.json"
+            save_session_plan(plan, out_p)
+            wrote = str(out_p)
+        out = plan.to_dict()
+        out["wrote"] = wrote
+        print(json.dumps(out, indent=2), flush=True)
+        return 0 if not plan.needs_refresh else 2
+
+    if args.cmd == "pick-option-contract":
+        raw = json.loads(Path(args.file).read_text())
+        picked = pick_option_contract(
+            raw,
+            option_type=args.option_type,
+            strike_hint=args.strike_hint,
+            underlying_price=args.underlying_price,
+            min_dte=int(args.min_dte if args.min_dte is not None else config.option_min_dte),
+            max_dte=int(args.max_dte if args.max_dte is not None else config.option_max_dte),
+        )
+        if picked is None:
+            print(
+                json.dumps(
+                    {
+                        "picked": None,
+                        "error": "No contract matched DTE/type/tradability filters",
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
+        out_path = args.out or (
+            config.config_path.parent / "logs" / "picked_contract.json"
+        )
+        save_picked(picked, out_path)
+        print(
+            json.dumps({"picked": picked.to_dict(), "wrote": str(out_path)}, indent=2),
+            flush=True,
+        )
+        return 0
+
+    if args.cmd == "prepare-option-review":
+        req = build_review_request(
+            account_number=config.agentic_account_number,
+            symbol=args.symbol,
+            option_id=args.option_id,
+            option_type=args.option_type,
+            limit_price=float(args.price),
+            contracts=int(args.contracts),
+            max_premium_usd=float(
+                args.max_premium
+                if args.max_premium is not None
+                else config.max_option_premium
+            ),
+            live_path=config.live_portfolio_path,
+        )
+        out_path = args.out or (
+            config.config_path.parent / "logs" / "option_review_request.json"
+        )
+        save_review_request(req, out_path)
+        out = req.to_dict()
+        out["wrote"] = str(out_path)
+        print(json.dumps(out, indent=2), flush=True)
+        return 2 if req.blocked else 0
+
+    if args.cmd == "record-option-review":
+        review = json.loads(Path(args.file).read_text())
+        request = None
+        if args.request_file and Path(args.request_file).is_file():
+            request = json.loads(Path(args.request_file).read_text())
+        out_path = args.out or (
+            config.config_path.parent / "logs" / "option_review_result.json"
+        )
+        record_review_result(review, request=request, path=out_path)
+        print(
+            json.dumps(
+                {
+                    "wrote": str(out_path),
+                    "place_allowed": False,
+                    "note": "Review stored. Wait for explicit user confirm before place.",
+                },
+                indent=2,
+            ),
+            flush=True,
+        )
+        return 0
 
     if args.cmd == "write-live-snapshot":
         if args.file:

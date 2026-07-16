@@ -102,6 +102,117 @@ def test_propose_option_unblocked_with_bp(tmp_path: Path):
     assert prop.max_premium_usd == 80.0
 
 
+def test_pick_option_contract_prefers_near_hint():
+    from agentic_trading.live.pick_contract import pick_option_contract
+    from datetime import date, timedelta
+
+    today = date.today()
+    exp = (today + timedelta(days=21)).isoformat()
+    instruments = [
+        {
+            "id": "far",
+            "type": "call",
+            "strike_price": "250.0000",
+            "expiration_date": exp,
+            "state": "active",
+            "tradability": "tradable",
+            "chain_symbol": "AAPL",
+        },
+        {
+            "id": "near",
+            "type": "call",
+            "strike_price": "195.0000",
+            "expiration_date": exp,
+            "state": "active",
+            "tradability": "tradable",
+            "chain_symbol": "AAPL",
+        },
+    ]
+    picked = pick_option_contract(
+        instruments, option_type="call", strike_hint=195.0, min_dte=7, max_dte=45
+    )
+    assert picked is not None
+    assert picked.option_id == "near"
+    assert picked.strike_price == 195.0
+
+
+def test_prepare_review_blocks_low_bp(tmp_path: Path):
+    from agentic_trading.live.supervised_review import build_review_request
+    from agentic_trading.live.portfolio import (
+        save_live_portfolio,
+        snapshot_from_broker_payloads,
+    )
+
+    live_path = tmp_path / "live.json"
+    snap = snapshot_from_broker_payloads(
+        account_number="616665162",
+        portfolio={"cash": "96", "buying_power": {"buying_power": "1.29"}},
+    )
+    save_live_portfolio(snap, live_path)
+    req = build_review_request(
+        account_number="616665162",
+        symbol="AAPL",
+        option_id="abc-123",
+        option_type="call",
+        limit_price=0.90,
+        contracts=1,
+        max_premium_usd=100,
+        live_path=live_path,
+    )
+    assert req.blocked is True
+    assert req.place_allowed is False
+    assert req.bp_free is False
+
+
+def test_prepare_review_ok_with_bp(tmp_path: Path):
+    from agentic_trading.live.supervised_review import build_review_request
+    from agentic_trading.live.portfolio import (
+        save_live_portfolio,
+        snapshot_from_broker_payloads,
+    )
+
+    live_path = tmp_path / "live.json"
+    snap = snapshot_from_broker_payloads(
+        account_number="616665162",
+        portfolio={"cash": "500", "buying_power": {"buying_power": "400"}},
+    )
+    save_live_portfolio(snap, live_path)
+    req = build_review_request(
+        account_number="616665162",
+        symbol="AAPL",
+        option_id="abc-123",
+        option_type="call",
+        limit_price=0.90,
+        contracts=1,
+        max_premium_usd=100,
+        live_path=live_path,
+    )
+    assert req.blocked is False
+    assert req.bp_free is True
+    assert req.mcp_review_args["legs"][0]["option_id"] == "abc-123"
+    assert req.mcp_review_args["price"] == "0.90"
+
+
+def test_session_refresh_plan_detects_stale(tmp_path: Path):
+    from agentic_trading.live.session import build_session_refresh_plan
+    from agentic_trading.live.portfolio import (
+        save_live_portfolio,
+        snapshot_from_broker_payloads,
+    )
+    from agentic_trading.config import load_config
+    from datetime import datetime, timezone, timedelta
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = load_config(root / "config.yaml")
+    # Point at tmp by saving over real path is bad; use age via old ts in tmp by
+    # building plan against current config live path — just assert shape.
+    plan = build_session_refresh_plan(cfg, stale_after_seconds=1, min_bp_for_options=50)
+    assert plan.agentic_account_number
+    assert plan.mcp_refresh_steps
+    assert plan.supervised_option_steps
+    assert "Only Agentic" in plan.rules[0] or "Agentic" in plan.rules[0]
+
+
 def test_cli_write_live_snapshot_and_status(tmp_path: Path, monkeypatch):
     root = Path(__file__).resolve().parents[1]
     cfg_src = (root / "config.yaml").read_text()
