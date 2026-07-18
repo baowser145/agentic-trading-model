@@ -1,0 +1,23 @@
+# 30-day swing hold screening criteria
+
+universe:
+  # S&P 500 proxy via liquid large-caps; expand in production
+  tickers_source: sp500_sample
+
+screening:
+  rsi_min: 40
+  rsi_max: 60
+  above_sma_days: 50
+  pullback_min_pct: 5
+  pullback_max_pct: 15
+  min_avg_volume: 500000
+
+output:
+  top_n: 10
+
+backtest:
+  hold_days: 30
+  round_trip_cost_pct: 0.1
+  start_year: 2019
+  end_year: 2024
+  benchmark: SPY

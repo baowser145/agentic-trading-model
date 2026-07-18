@@ -1,0 +1,15 @@
+services:
+  screener:
+    build: .
+    container_name: stock-screener-30d
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config/criteria.yaml:/app/config/criteria.yaml:ro
+    environment:
+      - TZ=America/New_York
+      - CRON_LOG=${CRON_LOG:-1}
+      # Mon-Fri 6:30pm ET (after US market close)
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-30 18 * * 1-5}
