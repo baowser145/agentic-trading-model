@@ -1,0 +1,16 @@
+{
+  "cached_at": "2026-07-02T20:19:22",
+  "period": "2019-2024",
+  "hold_days": 30,
+  "round_trip_cost_pct": 0.1,
+  "num_rebalances": 71,
+  "strategy_avg_per_period_pct": 2.57,
+  "benchmark_avg_per_period_pct": 2.18,
+  "strategy_annualized_pct": 30.87,
+  "benchmark_annualized_pct": 26.15,
+  "excess_annualized_pct": 4.72,
+  "beats_benchmark": true,
+  "win_rate_pct": 57.7,
+  "periods_won": 41,
+  "periods_total": 71
+}
