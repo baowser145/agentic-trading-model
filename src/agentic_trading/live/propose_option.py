@@ -8,7 +8,12 @@ from typing import Any
 
 from agentic_trading.agent.research import load_daily_focus
 from agentic_trading.config import AppConfig
-from agentic_trading.live.portfolio import LivePortfolioSnapshot, load_live_portfolio
+from agentic_trading.live.portfolio import (
+    LivePortfolioSnapshot,
+    day_baseline_path_for,
+    day_pnl_pct,
+    load_live_portfolio,
+)
 from agentic_trading.market.quotes import FixtureQuoteProvider
 
 
@@ -39,8 +44,9 @@ class OptionProposal:
     warnings: list[str] = field(default_factory=list)
     thesis: str = ""
     risk_notes: list[str] = field(default_factory=list)
+    manage_rules: dict[str, Any] = field(default_factory=dict)
     mcp_next_steps: list[dict[str, Any]] = field(default_factory=list)
-    place_allowed: bool = False  # always False in v1
+    place_allowed: bool = False  # True only with standing auth + not blocked
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -88,7 +94,19 @@ def propose_option(
     Does NOT place orders. Does NOT call Robinhood APIs directly —
     emits mcp_next_steps for chains → instruments → review_option_order.
     """
+    focus = (
+        load_daily_focus(config.daily_focus.path)
+        if config.daily_focus.path
+        else None
+    )
+    picks = list((focus or {}).get("daily_picks") or [])
+    picks = [str(s).upper() for s in picks]
+    focus_bias = str((focus or {}).get("market_bias") or "").strip().lower()
+
     ot = option_type.strip().lower()
+    # If caller left default "call" but morning bias is put, align proposal to puts
+    if ot == "call" and focus_bias == "put" and symbol is None:
+        ot = "put"
     if ot not in ("call", "put"):
         raise ValueError("option_type must be 'call' or 'put'")
 
@@ -107,21 +125,17 @@ def propose_option(
     if dte_hi < dte_lo:
         dte_hi = dte_lo
 
-    focus = (
-        load_daily_focus(config.daily_focus.path)
-        if config.daily_focus.path
-        else None
-    )
-    picks = list((focus or {}).get("daily_picks") or [])
-    picks = [str(s).upper() for s in picks]
-
     if symbol:
         sym = symbol.upper().strip()
     elif picks:
         sym = picks[0]
     else:
-        # Prefer liquid names from config, skip SPY as trade underlying default
-        pool = [s for s in config.symbols if s not in ("SPY",)]
+        # Prefer liquid names from config, skip indices
+        pool = [
+            s
+            for s in config.symbols
+            if s not in ("SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "SMH")
+        ]
         sym = pool[0] if pool else "AAPL"
 
     if live is None and live_path is not None:
@@ -140,15 +154,31 @@ def propose_option(
     bp = live.buying_power if live else None
     cash = live.cash if live else None
 
+    day_halt = float(getattr(config.risk, "max_daily_loss_pct", 0.05))
+
     if live and not live.agentic_allowed:
         block.append("Snapshot account is not agentic_allowed — refuse live proposals.")
+    max_open = int(getattr(config, "max_open_options", 1))
     if live and live.option_positions:
         open_opts = [
             p for p in live.option_positions if abs(p.quantity) > 1e-9
         ]
-        if open_opts and n_contracts >= 1:
+        if len(open_opts) >= max_open:
+            block.append(
+                f"Already {len(open_opts)} open option position(s) at "
+                f"max_open_options={max_open} — manage (TP/SL/time), do not add."
+            )
+        elif open_opts:
             warnings.append(
-                f"Already {len(open_opts)} open option position(s); playbook prefers max 1."
+                f"Already {len(open_opts)} open option position(s); "
+                f"playbook max_open_options={max_open} — manage (TP/SL/time)."
+            )
+    if live is not None and getattr(config, "live_portfolio_path", None):
+        pnl = day_pnl_pct(live, day_baseline_path_for(config.live_portfolio_path))  # type: ignore[arg-type]
+        if pnl <= -day_halt:
+            block.append(
+                f"Day P&L {pnl:.2%} breached account day-kill -{day_halt:.0%}; "
+                "no new option risk today."
             )
     if bp is not None and bp < max_prem * 0.5:
         block.append(
@@ -183,18 +213,54 @@ def propose_option(
         "puts if filter red. Confirm with live tape — fixtures are not live."
     )
 
+    tp_lo = float(getattr(config, "option_take_profit_pct_low", 0.10))
+    tp_hi = float(getattr(config, "option_take_profit_pct_high", 0.20))
+    sl = float(getattr(config, "option_stop_loss_pct", 0.10))
+    exit_dte = int(getattr(config, "option_exit_dte", 3))
+
     thesis = (
         f"Long {ot} on {sym}: defined risk = premium paid (max ${max_prem:.0f} "
         f"for {n_contracts} contract(s)). Target liquid expiry in {dte_lo}-{dte_hi} DTE, "
-        f"delta ~0.30-0.50. Exit guidelines: +50-100% premium or -50% stop or 1 DTE left."
+        f"delta ~0.30-0.50. Manage: take profit +{tp_lo:.0%}\u2013{tp_hi:.0%} premium, "
+        f"stop \u2212{sl:.0%} premium, exit by {exit_dte} DTE. "
+        f"Account day kill: halt new risk if day P&L \u2264 \u2212{day_halt:.0%}."
     )
     risk_notes = [
         "Max loss = premium paid (+ fees); do not average down automatically.",
         "No 0DTE in v1 playbook.",
         "Single-leg Level 2 only via Robinhood MCP (no multi-leg spreads).",
-        "Always review_option_order then human confirm before place_option_order.",
-        "place_allowed is always false in this CLI — proposal only.",
+        f"Exit: +{tp_lo:.0%}–{tp_hi:.0%} take-profit OR −{sl:.0%} stop OR ≤{exit_dte} DTE.",
+        f"If account loses ≥{day_halt:.0%} on the day → stop all new trades.",
+        "Always review_option_order before place_option_order.",
     ]
+    place_wo = bool(getattr(config, "options_place_without_confirm", False))
+    if place_wo:
+        risk_notes.append(
+            "Standing auth: place_option_order allowed after clean review without per-trade yes "
+            "(Agentic only; BP/gates still apply)."
+        )
+    else:
+        risk_notes.append("place_allowed false until explicit user confirm (or enable standing auth).")
+    if sl <= 0.15:
+        warnings.append(
+            f"Option stop −{sl:.0%} is tight (bid/ask noise; BAC postmortem used −10%). "
+            "Expect more stop-outs; size small and use liquid names."
+        )
+
+    manage_rules = {
+        "take_profit_pct_low": tp_lo,
+        "take_profit_pct_high": tp_hi,
+        "stop_loss_pct": sl,
+        "exit_dte": exit_dte,
+        "max_open_options": max_open,
+        "daily_account_halt_pct": day_halt,
+        "metric": "option mark vs entry premium",
+        "user_chosen_stop": True,
+        "note": (
+            f"Sell if mark ≤ entry×(1−{sl:.0%}); take profit when mark ≥ entry×(1+{tp_lo:.0%}) "
+            f"(stretch to +{tp_hi:.0%} if still strong). Day P&L ≤ −{day_halt:.0%} → stop new trades."
+        ),
+    }
 
     expiries = _expiry_window(dte_lo, dte_hi)
     mcp_steps: list[dict[str, Any]] = [
@@ -251,10 +317,18 @@ def propose_option(
         {
             "step": 6,
             "tool": "robinhood__place_option_order",
-            "purpose": "ONLY after human explicit confirm of review result",
-            "blocked_by_cli": True,
+            "purpose": (
+                "After clean review — standing auth allows place without per-trade yes"
+                if place_wo
+                else "ONLY after human explicit confirm of review result"
+            ),
+            "blocked_by_cli": not place_wo,
+            "standing_auth": place_wo,
         },
     ]
+
+    # Proposal itself never places; place_allowed signals agent may continue to place later
+    proposal_place_ok = place_wo and not bool(block)
 
     return OptionProposal(
         ts=datetime.now(timezone.utc).isoformat(),
@@ -280,8 +354,9 @@ def propose_option(
         warnings=warnings,
         thesis=thesis,
         risk_notes=risk_notes,
+        manage_rules=manage_rules,
         mcp_next_steps=mcp_steps,
-        place_allowed=False,
+        place_allowed=proposal_place_ok,
     )
 
 

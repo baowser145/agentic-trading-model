@@ -1,6 +1,9 @@
 trading_mode: paper
 symbols:
+# Core mega / liquid (config trade universe)
 - SPY
+- QQQ
+- IWM
 - AAPL
 - MA
 - MSFT
@@ -15,7 +18,20 @@ symbols:
 - AMZN
 - META
 - GOOGL
-- QQQ
+- TSLA
+- AMD
+# Liquid second tier (scan + put-day weak RS focus)
+- HOOD
+- COIN
+- PLTR
+- UBER
+- DIS
+- BA
+- CRM
+- ARKK
+- XLF
+- XLE
+
 strategy:
   name: day_trade_playbook
   market_symbol: SPY
@@ -57,7 +73,10 @@ broker:
   allow_live: false
   agentic_account_number: '616665162'
   settlement_days: 1
-  trade_when_cash_available: true
+  # Live 2026-07-17 lesson: RH cash can show full after option closes while
+  # buying_power lags (settlement / BP). Paper defaults to settled-only buys
+  # so we cannot thrash-redeploy unsettled proceeds same day.
+  trade_when_cash_available: false
 live:
   portfolio_path: logs/live_portfolio.json
   proposal_path: logs/option_proposal.json
@@ -65,6 +84,18 @@ live:
   max_option_contracts: 1
   min_dte: 7
   max_dte: 31
+  # Daily long-premium manage rules (user 2026-07-17)
+  # Note: -10% option stop is tight (BAC noise risk); user chose it over -40/-50%.
+  option_take_profit_pct_low: 0.10   # sell when premium +10%
+  option_take_profit_pct_high: 0.20  # or up to +20%
+  option_stop_loss_pct: 0.10         # sell when premium -10%
+  option_exit_dte: 3                 # force manage/exit by 3 DTE
+  # User override 2026-07-17: allow second concurrent long-premium (was 1).
+  max_open_options: 2
+  # Account day kill (same as risk.max_daily_loss_pct): no new trades if day ≤ -5%
+  # Standing user auth (2026-07-17): place Agentic long-premium when playbook gates pass
+  # (no per-trade "yes"). Still: Agentic only, BP free, max_open_options, day halt, review first.
+  options_place_without_confirm: true
 logging:
   path: logs/decisions.jsonl
   paper_state_path: logs/paper_state.json

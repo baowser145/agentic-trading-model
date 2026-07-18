@@ -74,8 +74,8 @@ class AppConfig:
     loop_interval_seconds: int
     config_path: Path
     settlement_days: int = 1  # track formal T+1 settlement
-    # True: buy with any cash in account after a sale (no wait). False: settled-only.
-    trade_when_cash_available: bool = True
+    # True: buy with any cash after a sale. False: settled-only (RH BP lag lesson).
+    trade_when_cash_available: bool = False
     paper_state_path: Path | None = None
     selector: SelectorConfig = SelectorConfig()
     daily_focus: DailyFocusConfig = DailyFocusConfig()
@@ -87,6 +87,14 @@ class AppConfig:
     max_option_contracts: int = 1
     option_min_dte: int = 7
     option_max_dte: int = 31
+    # Long-premium manage rules (premium % change from entry)
+    option_take_profit_pct_low: float = 0.10
+    option_take_profit_pct_high: float = 0.20
+    option_stop_loss_pct: float = 0.10
+    option_exit_dte: int = 3
+    max_open_options: int = 1
+    # True: agent may place after clean review without per-trade user yes (Agentic rails still apply)
+    options_place_without_confirm: bool = False
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -173,7 +181,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     settlement_days = int(broker.get("settlement_days", account.get("settlement_days", 1)))
     if settlement_days < 0:
         settlement_days = 1
-    trade_when_cash_available = bool(broker.get("trade_when_cash_available", True))
+    trade_when_cash_available = bool(broker.get("trade_when_cash_available", False))
 
     state_raw = logging_cfg.get("paper_state_path", "logs/paper_state.json")
     state_path = Path(state_raw)
@@ -225,6 +233,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     max_opt_contracts = max(1, min(int(live_cfg.get("max_option_contracts", 1)), 5))
     opt_min_dte = max(1, int(live_cfg.get("min_dte", 7)))
     opt_max_dte = max(opt_min_dte, int(live_cfg.get("max_dte", 31)))
+    tp_lo = max(0.05, min(2.0, float(live_cfg.get("option_take_profit_pct_low", 0.10))))
+    tp_hi = max(tp_lo, min(3.0, float(live_cfg.get("option_take_profit_pct_high", 0.20))))
+    # User may choose tight stops (e.g. 10%); allow 5%–90% (warn in proposals if ≤15%)
+    opt_sl = max(0.05, min(0.90, float(live_cfg.get("option_stop_loss_pct", 0.10))))
+    opt_exit_dte = max(1, min(14, int(live_cfg.get("option_exit_dte", 3))))
+    max_open_opts = max(1, min(3, int(live_cfg.get("max_open_options", 1))))
+    place_wo_confirm = bool(live_cfg.get("options_place_without_confirm", False))
 
     return AppConfig(
         trading_mode=mode,
@@ -262,4 +277,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         max_option_contracts=max_opt_contracts,
         option_min_dte=opt_min_dte,
         option_max_dte=opt_max_dte,
+        option_take_profit_pct_low=tp_lo,
+        option_take_profit_pct_high=tp_hi,
+        option_stop_loss_pct=opt_sl,
+        option_exit_dte=opt_exit_dte,
+        max_open_options=max_open_opts,
+        options_place_without_confirm=place_wo_confirm,
     )

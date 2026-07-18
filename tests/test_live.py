@@ -72,12 +72,20 @@ def test_propose_option_blocks_low_bp(tmp_path: Path):
         max_premium=100.0,
         live_path=live_path,
     )
+    # Blocked on BP even with standing auth
+    assert prop.blocked is True
     assert prop.place_allowed is False
     assert prop.symbol == "AAPL"
     assert prop.option_type == "call"
-    assert prop.blocked is True
     assert prop.mcp_next_steps
-    assert prop.mcp_next_steps[-1].get("blocked_by_cli") is True
+    # User lock-in manage rules
+    assert cfg.option_stop_loss_pct == 0.10
+    assert cfg.option_take_profit_pct_low == 0.10
+    assert cfg.option_take_profit_pct_high == 0.20
+    assert cfg.options_place_without_confirm is True
+    assert prop.manage_rules.get("stop_loss_pct") == 0.10
+    assert prop.manage_rules.get("take_profit_pct_high") == 0.20
+    assert any("tight" in w.lower() for w in prop.warnings)
 
 
 def test_propose_option_unblocked_with_bp(tmp_path: Path):
@@ -100,6 +108,8 @@ def test_propose_option_unblocked_with_bp(tmp_path: Path):
     assert prop.symbol == "MSFT"
     assert prop.option_type == "put"
     assert prop.max_premium_usd == 80.0
+    # Standing auth + not blocked → place_allowed for agent follow-through
+    assert prop.place_allowed is True
 
 
 def test_pick_option_contract_prefers_near_hint():
@@ -186,9 +196,12 @@ def test_prepare_review_ok_with_bp(tmp_path: Path):
         contracts=1,
         max_premium_usd=100,
         live_path=live_path,
+        place_without_confirm=True,
     )
     assert req.blocked is False
     assert req.bp_free is True
+    assert req.place_allowed is True
+    assert req.human_confirm_required is False
     assert req.mcp_review_args["legs"][0]["option_id"] == "abc-123"
     assert req.mcp_review_args["price"] == "0.90"
 

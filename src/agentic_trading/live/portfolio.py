@@ -170,6 +170,38 @@ def _f(val: Any, default: float = 0.0) -> float:
         return default
 
 
+def day_baseline_path_for(live_path: Path) -> Path:
+    """Where the day-start equity baseline for day-P&L-halt lives, next to the live snapshot."""
+    return Path(live_path).parent / "live_day_baseline.json"
+
+
+def day_pnl_pct(snapshot: LivePortfolioSnapshot, state_path: Path) -> float:
+    """
+    Account equity change since the first snapshot seen today (UTC calendar day),
+    for the live options day-kill gate. Establishes a fresh baseline once per day;
+    returns 0.0 on the first call of the day (nothing to compare against yet) and
+    whenever total_value/baseline is unusable.
+    """
+    today = datetime.now(timezone.utc).date().isoformat()
+    state_path = Path(state_path)
+    if state_path.is_file():
+        try:
+            data = json.loads(state_path.read_text())
+        except (json.JSONDecodeError, TypeError, ValueError):
+            data = {}
+        if data.get("date") == today:
+            baseline = float(data.get("total_value") or 0.0)
+            if baseline > 0:
+                return (snapshot.total_value - baseline) / baseline
+            return 0.0
+
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"date": today, "total_value": snapshot.total_value}) + "\n"
+    )
+    return 0.0
+
+
 def snapshot_from_broker_payloads(
     *,
     account_number: str,

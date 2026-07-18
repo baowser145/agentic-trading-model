@@ -164,17 +164,27 @@ def build_session_refresh_plan(
         },
         {
             "step": 9,
-            "action": "Present review to user; place_option_order ONLY on explicit yes",
+            "action": (
+                "If standing auth (options_place_without_confirm): place after clean review; "
+                "else present review and wait for explicit yes"
+            ),
         },
     ]
 
+    place_wo = bool(getattr(config, "options_place_without_confirm", False))
     rules = [
         "Only Agentic account (agentic_allowed=true) for any live tool.",
         "Auto-refresh live snapshot when missing or older than stale_after_seconds.",
-        "propose-option / pick / review never place orders.",
-        "place_option_order requires explicit user confirmation after review.",
+        "propose-option / pick / review never place by themselves.",
+        (
+            f"Standing auth ON: place_option_order after clean review without per-trade yes "
+            f"(still Agentic + BP + max_open_options={config.max_open_options} + day halt — "
+            f"all now hard-blocking, not just warnings)."
+            if place_wo
+            else "place_option_order requires explicit user confirmation after review."
+        ),
         "If BP not free, stop after snapshot + status; do not thrash review/place.",
-        "Paper mode remains default; allow_live stays false until user enables.",
+        "Paper mode remains default for stock loop; options live only via Agentic MCP path.",
     ]
 
     return SessionRefreshPlan(

@@ -71,6 +71,7 @@ def build_review_request(
     max_premium_usd: float = 100.0,
     live: LivePortfolioSnapshot | None = None,
     live_path: Path | None = None,
+    place_without_confirm: bool = False,
 ) -> OptionReviewRequest:
     if live is None and live_path is not None:
         live = load_live_portfolio(live_path)
@@ -117,6 +118,22 @@ def build_review_request(
         ],
     }
 
+    blocked = bool(block)
+    # Standing auth: place after clean review when user enabled place_without_confirm
+    can_place = (not blocked) and free and bool(place_without_confirm)
+    if place_without_confirm and not blocked:
+        note = (
+            "Call robinhood__review_option_order with mcp_review_args if not blocked. "
+            "Standing user auth: place_option_order allowed after clean review "
+            "(Agentic only; BP free; max 1 open; day halt still apply)."
+        )
+    else:
+        note = (
+            "Call robinhood__review_option_order with mcp_review_args only if not blocked. "
+            "place_option_order requires explicit user confirm (or enable "
+            "live.options_place_without_confirm)."
+        )
+
     return OptionReviewRequest(
         ts=datetime.now(timezone.utc).isoformat(),
         account_number=account_number,
@@ -128,17 +145,14 @@ def build_review_request(
         max_premium_usd=float(max_premium_usd),
         estimated_debit_usd=round(estimated, 2),
         buying_power=live.buying_power if live else None,
-        bp_free=free and not block,
-        blocked=bool(block),
+        bp_free=free and not blocked,
+        blocked=blocked,
         block_reasons=block,
         warnings=warnings,
         mcp_review_args=mcp_args,
-        place_allowed=False,
-        human_confirm_required=True,
-        note=(
-            "Call robinhood__review_option_order with mcp_review_args only if not blocked. "
-            "NEVER call place_option_order unless the user explicitly confirms the review."
-        ),
+        place_allowed=can_place,
+        human_confirm_required=not can_place,
+        note=note,
     )
 
 
@@ -154,16 +168,39 @@ def record_review_result(
     *,
     request: dict[str, Any] | None = None,
     path: Path,
+    place_without_confirm: bool = False,
 ) -> Path:
-    """Persist MCP review_option_order response for audit / next human confirm."""
+    """Persist MCP review_option_order response for audit / place gate."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    req_blocked = bool((request or {}).get("blocked"))
+    req_place = bool((request or {}).get("place_allowed"))
+    # If review has any broker alert, that's live evidence from Robinhood itself —
+    # it hard-blocks place regardless of standing auth (place_without_confirm can't override it).
+    alerts = []
+    if isinstance(review_response, dict):
+        for k in ("alerts", "warnings", "blocking_alerts"):
+            v = review_response.get(k)
+            if isinstance(v, list):
+                alerts.extend(v)
+    can_place = (not req_blocked) and (req_place or place_without_confirm) and not alerts
     payload = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "request": request,
         "review_response": review_response,
-        "place_allowed": False,
-        "note": "Review recorded. Place only after explicit human yes.",
+        "place_allowed": can_place,
+        "human_confirm_required": not can_place,
+        "note": (
+            "Standing auth: agent may place_option_order on Agentic after clean review."
+            if can_place
+            else (
+                "Broker review returned alerts — place blocked, human review required "
+                "regardless of standing auth."
+                if alerts and not req_blocked
+                else "Review recorded. Place only after explicit human yes or enable standing auth."
+            )
+        ),
+        "alerts_seen": len(alerts),
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
     return path
