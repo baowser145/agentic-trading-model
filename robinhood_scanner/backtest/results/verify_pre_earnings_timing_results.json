@@ -1,0 +1,68 @@
+{
+  "14": {
+    "n_trades": 3986,
+    "n_tickers": 501,
+    "real_mean": 0.010678132544838983,
+    "real_win_rate": 0.5725037631710989,
+    "real_p_value": 6.571632316950616e-30,
+    "control_mean": 0.005949117897014301,
+    "control_win_rate": 0.5386184980766014,
+    "incremental_edge": 0.004729014647824682,
+    "per_ticker_avg_total": 0.08921817095940643
+  },
+  "18": {
+    "n_trades": 3986,
+    "n_tickers": 501,
+    "real_mean": 0.015223886254990611,
+    "real_win_rate": 0.5943301555444054,
+    "real_p_value": 6.034092044023112e-45,
+    "control_mean": 0.007230148570428259,
+    "control_win_rate": 0.540876400735909,
+    "incremental_edge": 0.007993737684562352,
+    "per_ticker_avg_total": 0.12998159651844865
+  },
+  "21": {
+    "n_trades": 3986,
+    "n_tickers": 501,
+    "real_mean": 0.016834694371899377,
+    "real_win_rate": 0.6021073758153538,
+    "real_p_value": 1.296408465215023e-42,
+    "control_mean": 0.008582426902151732,
+    "control_win_rate": 0.5386184980766014,
+    "incremental_edge": 0.008252267469747644,
+    "per_ticker_avg_total": 0.1430939814421719
+  },
+  "25": {
+    "n_trades": 3986,
+    "n_tickers": 501,
+    "real_mean": 0.02147682888405165,
+    "real_win_rate": 0.6043652784746613,
+    "real_p_value": 1.9785093998297955e-54,
+    "control_mean": 0.010910552110215913,
+    "control_win_rate": 0.5478508111724368,
+    "incremental_edge": 0.010566276773835738,
+    "per_ticker_avg_total": 0.18815190257937017
+  },
+  "30": {
+    "n_trades": 3986,
+    "n_tickers": 501,
+    "real_mean": 0.023109166248731293,
+    "real_win_rate": 0.5975915704967386,
+    "real_p_value": 1.024776186752494e-48,
+    "control_mean": 0.01358626732190217,
+    "control_win_rate": 0.5469476501087138,
+    "incremental_edge": 0.009522898926829122,
+    "per_ticker_avg_total": 0.2079776530441609
+  },
+  "40": {
+    "n_trades": 3986,
+    "n_tickers": 501,
+    "real_mean": 0.023726544159135363,
+    "real_win_rate": 0.5983442047165077,
+    "real_p_value": 1.2841704126092974e-46,
+    "control_mean": 0.018615428001269682,
+    "control_win_rate": 0.5544739923064057,
+    "incremental_edge": 0.005111116157865681,
+    "per_ticker_avg_total": 0.2094184452363408
+  }
+}
