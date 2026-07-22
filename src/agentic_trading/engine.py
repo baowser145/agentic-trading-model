@@ -141,12 +141,43 @@ class Engine:
             for s in (data.get("daily_picks") or [])
             if str(s).strip()
         }
-        if not allowed:
+        bias = str(data.get("market_bias") or "call").strip().lower()
+        if bias not in ("call", "put", "hold"):
+            bias = "call"
+        if not allowed and bias == "call":
             return signals, ["daily_focus: empty picks — all setups eligible"]
         out: list[Signal] = []
-        notes = [f"daily_focus active: {', '.join(sorted(allowed))}"]
+        notes = [
+            f"daily_focus active: picks={', '.join(sorted(allowed)) or '(none)'} "
+            f"bias={bias}"
+        ]
+        # Morning bias: long-only paper playbook — block NEW longs on put/hold days
+        block_new_longs = bias in ("put", "hold")
+        if block_new_longs:
+            notes.append(
+                f"market_bias={bias}: blocking NEW ENTER_LONG "
+                "(put/hold day; manage/exits still allowed)"
+            )
         for s in signals:
-            if s.action == SignalAction.ENTER_LONG and s.symbol not in allowed:
+            if s.action != SignalAction.ENTER_LONG:
+                out.append(s)
+                continue
+            if block_new_longs:
+                out.append(
+                    Signal(
+                        symbol=s.symbol,
+                        action=SignalAction.FLAT,
+                        strength=0.0,
+                        reason=(
+                            f"market_bias={bias}: no new long equity "
+                            f"(morning assess); was: {s.reason}"
+                        ),
+                        ref_price=s.ref_price,
+                        stop_price=s.stop_price,
+                        target_price=s.target_price,
+                    )
+                )
+            elif allowed and s.symbol not in allowed:
                 out.append(
                     Signal(
                         symbol=s.symbol,

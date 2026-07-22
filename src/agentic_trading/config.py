@@ -95,6 +95,10 @@ class AppConfig:
     max_open_options: int = 1
     # True: agent may place after clean review without per-trade user yes (Agentic rails still apply)
     options_place_without_confirm: bool = False
+    # Only this fraction of broker buying_power is available for new risk (learn mode: 0.5).
+    bp_usage_pct: float = 1.0
+    # Prefer paper process; live only with free BP and bp_usage_pct cap.
+    learning_mode: bool = False
 
 
 def _clamp_risk(raw: dict[str, Any]) -> RiskConfig:
@@ -240,6 +244,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     opt_exit_dte = max(1, min(14, int(live_cfg.get("option_exit_dte", 3))))
     max_open_opts = max(1, min(3, int(live_cfg.get("max_open_options", 1))))
     place_wo_confirm = bool(live_cfg.get("options_place_without_confirm", False))
+    # User learn mode (2026-07-20): only half of free BP for new risk
+    bp_usage = float(live_cfg.get("bp_usage_pct", 1.0))
+    bp_usage = max(0.05, min(1.0, bp_usage))
+    learning_mode = bool(live_cfg.get("learning_mode", False))
 
     return AppConfig(
         trading_mode=mode,
@@ -283,4 +291,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         option_exit_dte=opt_exit_dte,
         max_open_options=max_open_opts,
         options_place_without_confirm=place_wo_confirm,
+        bp_usage_pct=bp_usage,
+        learning_mode=learning_mode,
     )

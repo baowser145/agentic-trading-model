@@ -78,6 +78,41 @@ def test_propose_option_blocks_low_bp(tmp_path: Path):
     assert prop.symbol == "AAPL"
     assert prop.option_type == "call"
     assert prop.mcp_next_steps
+    assert prop.bp_usage_pct == cfg.bp_usage_pct
+    assert prop.usable_buying_power is not None
+    assert prop.usable_buying_power == round(1.29 * cfg.bp_usage_pct, 2)
+
+
+def test_bp_usage_caps_premium_when_bp_healthy(tmp_path: Path):
+    from dataclasses import replace
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = load_config(root / "config.yaml")
+    # Force 50% usage and high premium default
+    cfg = replace(cfg, bp_usage_pct=0.5, max_option_premium=100.0, learning_mode=True)
+    live_path = tmp_path / "live.json"
+    snap = snapshot_from_broker_payloads(
+        account_number="616665162",
+        portfolio={
+            "total_value": "2000",
+            "cash": "200",
+            "buying_power": {"buying_power": "100"},
+        },
+        equity_positions=[],
+        option_positions=[],
+    )
+    save_live_portfolio(snap, live_path)
+    prop = propose_option(
+        cfg,
+        symbol="AAPL",
+        option_type="call",
+        max_premium=100.0,
+        live_path=live_path,
+    )
+    # usable = 50; premium must not exceed usable
+    assert prop.usable_buying_power == 50.0
+    assert prop.max_premium_usd <= 50.0 + 1e-6
+    assert any("capped to usable BP" in w or "learning_mode" in w for w in prop.warnings)
     # User lock-in manage rules
     assert cfg.option_stop_loss_pct == 0.10
     assert cfg.option_take_profit_pct_low == 0.10
@@ -223,7 +258,7 @@ def test_session_refresh_plan_detects_stale(tmp_path: Path):
     assert plan.agentic_account_number
     assert plan.mcp_refresh_steps
     assert plan.supervised_option_steps
-    assert "Only Agentic" in plan.rules[0] or "Agentic" in plan.rules[0]
+    assert any("Agentic" in r or "LEARNING MODE" in r for r in plan.rules)
 
 
 def test_cli_write_live_snapshot_and_status(tmp_path: Path, monkeypatch):

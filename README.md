@@ -49,6 +49,54 @@ python -m agentic_trading research --llm --apply --apply-daily
 
 Engine (`daily_focus.enabled: true`): new entries only in today's 3; exits still work on any open. Re-run research each morning.
 
+### Deep research: quality gate before daily_focus
+
+Single-ticker **5-section memo** (Deep Dive · Peer · Bear · Bull/Variant · Trade Plan). Advisory only — does **not** write `daily_focus` or place orders.
+
+```bash
+# Offline skeleton (no API)
+python -m agentic_trading deep-research --ticker PLTR --no-llm --quotes fixture
+
+# Full Grok memo (recommended)
+export XAI_API_KEY=xai-...
+python -m agentic_trading deep-research --ticker PLTR --llm --quotes yahoo
+python -m agentic_trading deep-research --ticker HOOD --peers SCHW,COIN --llm
+```
+
+Writes under `logs/deep_research/`:
+
+| File | Content |
+|------|---------|
+| `{TICKER}_{date}.md` / `.json` | Dated memo |
+| `{TICKER}_latest.md` / `.json` | Latest for that ticker |
+| `index.json` | Verdict index for all researched names |
+
+**Suggested flow:** morning scan ranks names → `deep-research --ticker X` on shortlist → only `pass` / careful `caution` survivors → `research --apply-daily`.
+
+### S&P 500 scan + top-N deep-research
+
+Liquidity + relative-strength scan over the S&P 500, then optional 5-section deep-research memos on the top few. **Not** Russell 3000 (too illiquid for this bot).
+
+```bash
+# Rank top 10 liquid names (yahoo tape; fetches constituents when online)
+python -m agentic_trading sp500-scan --top 10 --quotes yahoo --bias call
+
+# Scan + deep-research top 3 with Grok
+python -m agentic_trading sp500-scan --top 10 --deep-research --deep-n 3 --llm --quotes yahoo
+
+# Offline / tests
+python -m agentic_trading sp500-scan --top 5 --quotes fixture --no-remote-universe
+```
+
+| Flag | Effect |
+|------|--------|
+| `--top N` | Keep N liquid names after RS rank (default 10) |
+| `--deep-research` | Run deep memos on top `--deep-n` (default 3) |
+| `--bias call\|put\|hold` | call=strongest RS, put=weakest, hold=watch leaders |
+| `--min-dollar-vol` | Liquidity floor (default $20M avg daily) |
+
+Writes `logs/sp500_scan/latest.md`, `shortlist.json`, plus `logs/deep_research/*` when deep-research is on. Does **not** auto-write `daily_focus`.
+
 ### Risk profile (config.yaml)
 
 | Rule | Value |
@@ -191,6 +239,27 @@ src/agentic_trading/
   engine.py     # one tick
   __main__.py   # CLI
 ```
+
+## Options backtest + scenario search (research)
+
+Long-premium **simulation** (Black–Scholes + realized-vol IV proxy on daily bars). Not broker option quotes. Never places live orders.
+
+```bash
+source .venv/bin/activate
+
+# List seed scenarios
+python -m agentic_trading options-backtest --list-scenarios
+
+# Backtest one scenario (seeds or JSON path)
+python -m agentic_trading options-backtest --scenario balanced_40d_tp80_sl50
+
+# Mutator agent: iterate scenarios toward ~60% win rate + expectancy
+python -m agentic_trading options-search --iterations 60 --target-win-rate 0.60
+# → logs/options_search/OPTIONS_PLAN.md
+# → logs/options_search/best_scenario.json
+```
+
+Rails: **7–31 DTE**, single-leg, max 1 open. Live manage defaults (user): **+10–20% TP**, **−10% stop**, account day kill **−5%** (tight option stop — noise risk; see BAC postmortem).
 
 ## Disclaimer
 

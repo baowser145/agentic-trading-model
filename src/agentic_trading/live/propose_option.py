@@ -38,6 +38,8 @@ class OptionProposal:
     market_filter: str
     daily_focus_picks: list[str]
     buying_power: float | None
+    usable_buying_power: float | None  # BP × bp_usage_pct (learn-mode cap)
+    bp_usage_pct: float
     cash: float | None
     blocked: bool
     block_reasons: list[str] = field(default_factory=list)
@@ -153,8 +155,21 @@ def propose_option(
     warnings: list[str] = []
     bp = live.buying_power if live else None
     cash = live.cash if live else None
+    bp_usage = float(getattr(config, "bp_usage_pct", 1.0) or 1.0)
+    bp_usage = max(0.05, min(1.0, bp_usage))
+    usable_bp = (float(bp) * bp_usage) if bp is not None else None
+    learning = bool(getattr(config, "learning_mode", False))
 
     day_halt = float(getattr(config.risk, "max_daily_loss_pct", 0.05))
+
+    # Cap premium to usable BP (50% of broker BP in learn mode)
+    if usable_bp is not None and usable_bp > 0:
+        if max_prem > usable_bp:
+            warnings.append(
+                f"max_premium ${max_prem:.2f} capped to usable BP "
+                f"${usable_bp:.2f} ({bp_usage:.0%} of broker BP ${bp:.2f})."
+            )
+            max_prem = max(1.0, usable_bp)
 
     if live and not live.agentic_allowed:
         block.append("Snapshot account is not agentic_allowed — refuse live proposals.")
@@ -180,16 +195,28 @@ def propose_option(
                 f"Day P&L {pnl:.2%} breached account day-kill -{day_halt:.0%}; "
                 "no new option risk today."
             )
-    if bp is not None and bp < max_prem * 0.5:
+    if usable_bp is not None and usable_bp < max_prem * 0.5:
         block.append(
-            f"Buying power ${bp:.2f} is below half of max premium ${max_prem:.2f}; "
-            "new debit option likely fails until BP frees (settlement / cancel sells)."
+            f"Usable buying power ${usable_bp:.2f} "
+            f"({bp_usage:.0%} of broker BP ${bp:.2f}) is below half of max premium "
+            f"${max_prem:.2f}; free BP (settle sells) before new debit."
         )
     if bp is not None and bp < 5:
         block.append(f"Buying power critically low (${bp:.2f}).")
-    if cash is not None and cash < max_prem * 0.25 and (bp is None or bp < max_prem):
+    if usable_bp is not None and usable_bp < 5:
+        block.append(
+            f"Usable BP critically low (${usable_bp:.2f} = {bp_usage:.0%} of ${bp:.2f})."
+        )
+    if cash is not None and cash < max_prem * 0.25 and (
+        usable_bp is None or usable_bp < max_prem
+    ):
         warnings.append(
             f"Cash ${cash:.2f} may be insufficient for full premium ${max_prem:.2f}."
+        )
+    if learning:
+        warnings.append(
+            "learning_mode=true: paper process first; live only with free usable BP "
+            f"({bp_usage:.0%} of broker buying power)."
         )
     if picks and sym not in picks:
         warnings.append(
@@ -231,6 +258,9 @@ def propose_option(
         "Single-leg Level 2 only via Robinhood MCP (no multi-leg spreads).",
         f"Exit: +{tp_lo:.0%}–{tp_hi:.0%} take-profit OR −{sl:.0%} stop OR ≤{exit_dte} DTE.",
         f"If account loses ≥{day_halt:.0%} on the day → stop all new trades.",
+        f"BP budget: only {bp_usage:.0%} of broker buying_power for new risk "
+        f"(usable ≈ ${usable_bp:.2f})." if usable_bp is not None
+        else f"BP budget: only {bp_usage:.0%} of broker buying_power for new risk.",
         "Always review_option_order before place_option_order.",
     ]
     place_wo = bool(getattr(config, "options_place_without_confirm", False))
@@ -348,6 +378,8 @@ def propose_option(
         market_filter=market_filter,
         daily_focus_picks=picks,
         buying_power=bp,
+        usable_buying_power=round(usable_bp, 2) if usable_bp is not None else None,
+        bp_usage_pct=bp_usage,
         cash=cash,
         blocked=bool(block),
         block_reasons=block,

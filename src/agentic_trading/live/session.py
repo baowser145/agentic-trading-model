@@ -25,8 +25,11 @@ class SessionRefreshPlan:
     snapshot_age_seconds: float | None
     needs_refresh: bool
     buying_power: float | None
+    usable_buying_power: float | None
+    bp_usage_pct: float
     bp_free_for_options: bool
     min_bp_for_options: float
+    learning_mode: bool = False
     mcp_refresh_steps: list[dict[str, Any]] = field(default_factory=list)
     after_refresh_cli: list[str] = field(default_factory=list)
     supervised_option_steps: list[dict[str, Any]] = field(default_factory=list)
@@ -60,7 +63,12 @@ def build_session_refresh_plan(
     age = _age_seconds(snap.ts if snap else None)
     needs = snap is None or age is None or age > stale_after_seconds
     bp = snap.buying_power if snap else None
-    bp_free = bp is not None and bp >= min_bp_for_options
+    bp_usage = float(getattr(config, "bp_usage_pct", 1.0) or 1.0)
+    bp_usage = max(0.05, min(1.0, bp_usage))
+    usable = (float(bp) * bp_usage) if bp is not None else None
+    # Free for options = usable (capped) BP meets min, not full broker BP
+    bp_free = usable is not None and usable >= min_bp_for_options
+    learning = bool(getattr(config, "learning_mode", False))
 
     steps = [
         {
@@ -111,7 +119,10 @@ def build_session_refresh_plan(
     supervised = [
         {
             "step": 1,
-            "when": f"buying_power >= {min_bp_for_options}",
+            "when": (
+                f"usable_buying_power >= {min_bp_for_options} "
+                f"(broker_bp × {bp_usage:.0%})"
+            ),
             "cli": "python -m agentic_trading propose-option --type call",
         },
         {
@@ -178,14 +189,22 @@ def build_session_refresh_plan(
         "propose-option / pick / review never place by themselves.",
         (
             f"Standing auth ON: place_option_order after clean review without per-trade yes "
-            f"(still Agentic + BP + max_open_options={config.max_open_options} + day halt — "
+            f"(still Agentic + usable BP ({bp_usage:.0%} of broker) + "
+            f"max_open_options={config.max_open_options} + day halt — "
             f"all now hard-blocking, not just warnings)."
             if place_wo
             else "place_option_order requires explicit user confirmation after review."
         ),
-        "If BP not free, stop after snapshot + status; do not thrash review/place.",
+        f"BP budget: usable = broker buying_power × {bp_usage:.0%} "
+        f"(learning_mode={learning}).",
+        "If usable BP not free, stop after snapshot + status; do not thrash review/place.",
         "Paper mode remains default for stock loop; options live only via Agentic MCP path.",
     ]
+    if learning:
+        rules.insert(
+            0,
+            "LEARNING MODE: paper stocks first; live options only after free usable BP.",
+        )
 
     return SessionRefreshPlan(
         agentic_account_number=acct,
@@ -196,8 +215,11 @@ def build_session_refresh_plan(
         snapshot_age_seconds=age,
         needs_refresh=needs,
         buying_power=bp,
+        usable_buying_power=round(usable, 2) if usable is not None else None,
+        bp_usage_pct=bp_usage,
         bp_free_for_options=bp_free,
         min_bp_for_options=min_bp_for_options,
+        learning_mode=learning,
         mcp_refresh_steps=steps,
         after_refresh_cli=[
             "python -m agentic_trading status --live-only",

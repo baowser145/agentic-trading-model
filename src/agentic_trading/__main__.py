@@ -9,6 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from agentic_trading.agent.deep_research import run_deep_research
 from agentic_trading.agent.research import (
     apply_recommended_symbols,
     apply_universe_from_report,
@@ -16,6 +17,7 @@ from agentic_trading.agent.research import (
     run_research,
     write_daily_focus,
 )
+from agentic_trading.agent.sp500_scan import run_sp500_scan
 from agentic_trading.config import AppConfig, load_config
 from agentic_trading.engine import build_engine
 from agentic_trading.live.pick_contract import pick_option_contract, save_picked
@@ -32,6 +34,13 @@ from agentic_trading.live.supervised_review import (
     save_review_request,
 )
 from agentic_trading.market.quotes import build_quote_provider
+from agentic_trading.options_bt.runner import (
+    DEFAULT_SYMBOLS,
+    run_search,
+    run_single,
+    scenario_from_name,
+)
+from agentic_trading.options_bt.scenario import OptionScenario, SEED_SCENARIOS
 
 ET = ZoneInfo("America/New_York")
 
@@ -170,6 +179,48 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print only the live Agentic snapshot (implies --live)",
     )
+    morning_p = sub.add_parser(
+        "morning-paper",
+        help=(
+            "Morning paper routine: assess market (call/put/hold) → scan → "
+            "watch ticks → optional trigger (uses yahoo quotes by default)"
+        ),
+    )
+    morning_p.add_argument(
+        "--quotes",
+        type=str,
+        default="yahoo",
+        choices=["fixture", "live", "yahoo"],
+        help="Quote source (default yahoo/live for real tape; fixture for offline)",
+    )
+    morning_p.add_argument(
+        "--llm",
+        action="store_true",
+        help="Use Grok research for scanner (else heuristic RS scan)",
+    )
+    morning_p.add_argument(
+        "--watch-ticks",
+        type=int,
+        default=2,
+        help="Paper ticks to watch after scan before trigger (default 2)",
+    )
+    morning_p.add_argument(
+        "--no-trigger",
+        action="store_true",
+        help="Assess + scan + watch only; do not run a trigger tick",
+    )
+    morning_p.add_argument(
+        "--daily-n",
+        type=int,
+        default=3,
+        help="How many focus names to lock for the day (default 3)",
+    )
+    morning_p.add_argument(
+        "--session-dir",
+        type=Path,
+        default=None,
+        help="Isolate paper state (e.g. logs/paper_morning)",
+    )
     research_p = sub.add_parser(
         "research",
         help="Research pass: heuristic or LLM (SpaceXAI/Grok) before live",
@@ -200,6 +251,123 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not suggest symbols outside current config",
     )
+
+    deep_p = sub.add_parser(
+        "deep-research",
+        help=(
+            "5-section single-ticker memo (Deep Dive · Peer · Bear · Bull · Trade Plan) "
+            "before promoting a name to daily_focus — never places orders"
+        ),
+    )
+    deep_p.add_argument(
+        "--ticker",
+        "-t",
+        type=str,
+        required=True,
+        help="Ticker to research (e.g. AAPL, PLTR)",
+    )
+    deep_p.add_argument(
+        "--peers",
+        type=str,
+        default=None,
+        help="Comma-separated peers for valuation table (default: built-in map)",
+    )
+    deep_p.add_argument(
+        "--llm",
+        action="store_true",
+        help="Call Grok via XAI_API_KEY (recommended). Default if neither flag set.",
+    )
+    deep_p.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Heuristic skeleton only (tape + incomplete fundies; no API)",
+    )
+    deep_p.add_argument(
+        "--quotes",
+        type=str,
+        default="yahoo",
+        choices=["fixture", "live", "yahoo"],
+        help="Quote source for tape context (default yahoo)",
+    )
+    deep_p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Memo directory (default: logs/deep_research)",
+    )
+
+    sp500_p = sub.add_parser(
+        "sp500-scan",
+        help=(
+            "S&P 500 liquidity+RS scan → top-N shortlist; "
+            "optional deep-research on top deep-n (never places orders)"
+        ),
+    )
+    sp500_p.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="How many liquid names to keep after rank (default 10)",
+    )
+    sp500_p.add_argument(
+        "--deep-n",
+        type=int,
+        default=3,
+        help="How many top names to deep-research when enabled (default 3)",
+    )
+    sp500_p.add_argument(
+        "--deep-research",
+        action="store_true",
+        help="Run 5-section deep-research on top deep-n names",
+    )
+    sp500_p.add_argument(
+        "--llm",
+        action="store_true",
+        help="Use Grok for deep-research (default when --deep-research set)",
+    )
+    sp500_p.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Heuristic deep-research only (no API)",
+    )
+    sp500_p.add_argument(
+        "--bias",
+        type=str,
+        default="call",
+        choices=["call", "put", "hold"],
+        help="call=strongest RS, put=weakest RS, hold=strongest for watch (default call)",
+    )
+    sp500_p.add_argument(
+        "--min-dollar-vol",
+        type=float,
+        default=20_000_000.0,
+        help="Min avg daily dollar volume filter (default 20e6)",
+    )
+    sp500_p.add_argument(
+        "--rs-lookback",
+        type=int,
+        default=10,
+        help="Bars for RS vs SPY (default 10)",
+    )
+    sp500_p.add_argument(
+        "--quotes",
+        type=str,
+        default="yahoo",
+        choices=["fixture", "live", "yahoo"],
+        help="Quote source (default yahoo; fixture for offline tests)",
+    )
+    sp500_p.add_argument(
+        "--no-remote-universe",
+        action="store_true",
+        help="Do not fetch live S&P 500 list (use cache/fallback sample)",
+    )
+    sp500_p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Scan output dir (default logs/sp500_scan)",
+    )
+
     trades_p = sub.add_parser(
         "trades",
         help="Trade journal summary (for early backtest review)",
@@ -343,8 +511,198 @@ def main(argv: list[str] | None = None) -> int:
         help="Default logs/option_review_result.json",
     )
 
+    obt_p = sub.add_parser(
+        "options-backtest",
+        help="Backtest one long-premium scenario (BS model; research only)",
+    )
+    obt_p.add_argument(
+        "--scenario",
+        type=str,
+        default="balanced_40d_tp80_sl50",
+        help="Seed name or path to scenario JSON",
+    )
+    obt_p.add_argument(
+        "--symbols",
+        type=str,
+        default=None,
+        help="Comma-separated underlyings (default: liquid mega-caps + SPY)",
+    )
+    obt_p.add_argument("--start", type=str, default="2022-01-01")
+    obt_p.add_argument("--end", type=str, default=None)
+    obt_p.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="Use synthetic bars (no network; for tests)",
+    )
+    obt_p.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="Skip train/test validation block",
+    )
+    obt_p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Write result JSON under this dir (default logs/options_bt)",
+    )
+    obt_p.add_argument(
+        "--list-scenarios",
+        action="store_true",
+        help="List built-in seed scenarios and exit",
+    )
+
+    osearch_p = sub.add_parser(
+        "options-search",
+        help="Iterate scenarios with a mutator agent until a good plan emerges",
+    )
+    osearch_p.add_argument(
+        "--iterations",
+        type=int,
+        default=40,
+        help="How many scenarios to evaluate (default 40)",
+    )
+    osearch_p.add_argument(
+        "--target-win-rate",
+        type=float,
+        default=0.60,
+        help="Target win rate (default 0.60)",
+    )
+    osearch_p.add_argument(
+        "--symbols",
+        type=str,
+        default=None,
+        help="Comma-separated underlyings (include SPY for market filter)",
+    )
+    osearch_p.add_argument("--start", type=str, default="2022-01-01")
+    osearch_p.add_argument("--end", type=str, default=None)
+    osearch_p.add_argument("--synthetic", action="store_true")
+    osearch_p.add_argument("--seed", type=int, default=42)
+    osearch_p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output dir (default logs/options_search)",
+    )
+
     args = parser.parse_args(argv)
     config = load_config(args.config)
+
+    if args.cmd == "options-backtest":
+        if args.list_scenarios:
+            print(
+                json.dumps(
+                    [
+                        {
+                            "name": s.name,
+                            "option_type": s.option_type,
+                            "target_delta": s.target_delta,
+                            "target_dte": s.target_dte,
+                            "take_profit_pct": s.take_profit_pct,
+                            "stop_loss_pct": s.stop_loss_pct,
+                            "notes": s.notes,
+                        }
+                        for s in SEED_SCENARIOS
+                    ],
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 0
+        try:
+            scenario = scenario_from_name(args.scenario)
+        except ValueError as e:
+            print(json.dumps({"error": str(e)}), flush=True)
+            return 2
+        symbols = (
+            [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+            if args.symbols
+            else None
+        )
+        out_dir = args.out or (config.config_path.parent / "logs" / "options_bt")
+        cache = config.config_path.parent / "logs" / "options_bt" / "price_cache.json"
+        payload = run_single(
+            scenario,
+            symbols=symbols,
+            start=args.start,
+            end=args.end,
+            synthetic=bool(args.synthetic),
+            cache_path=None if args.synthetic else cache,
+            validate=not bool(args.no_validate),
+            out_dir=out_dir,
+        )
+        # Compact stdout (full trades in out dir)
+        summary = {
+            "scenario": payload.get("scenario", {}).get("name"),
+            "metrics": payload.get("metrics"),
+            "validation": (
+                {
+                    "passes": (payload.get("validation") or {}).get("passes"),
+                    "reasons": (payload.get("validation") or {}).get("reasons"),
+                    "test": (payload.get("validation") or {}).get("test"),
+                    "train_n": ((payload.get("validation") or {}).get("train") or {}).get(
+                        "n_trades"
+                    ),
+                    "score": (payload.get("validation") or {}).get("score"),
+                }
+                if payload.get("validation")
+                else None
+            ),
+            "notes": payload.get("notes"),
+            "out_dir": str(out_dir),
+        }
+        print(json.dumps(summary, indent=2), flush=True)
+        return 0
+
+    if args.cmd == "options-search":
+        symbols = (
+            [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+            if args.symbols
+            else list(DEFAULT_SYMBOLS)
+        )
+        out_dir = args.out or (config.config_path.parent / "logs" / "options_search")
+        cache = config.config_path.parent / "logs" / "options_bt" / "price_cache.json"
+        result = run_search(
+            symbols=symbols,
+            iterations=max(5, int(args.iterations)),
+            target_win_rate=float(args.target_win_rate),
+            start=args.start,
+            end=args.end,
+            synthetic=bool(args.synthetic),
+            seed=int(args.seed),
+            out_dir=out_dir,
+            cache_path=None if args.synthetic else cache,
+        )
+        # Compact leaderboard on stdout
+        best = result.get("best") or {}
+        plan = result.get("recommended_plan") or {}
+        summary = {
+            "iterations": result.get("iterations"),
+            "target_win_rate": result.get("target_win_rate"),
+            "best_name": (best.get("scenario") or {}).get("name"),
+            "best_score": best.get("score"),
+            "best_metrics": best.get("full_metrics"),
+            "validation_passes": (best.get("validation") or {}).get("passes"),
+            "validation_reasons": (best.get("validation") or {}).get("reasons"),
+            "recommended_plan": plan,
+            "leaderboard": [
+                {
+                    "name": (c.get("scenario") or {}).get("name"),
+                    "score": c.get("score"),
+                    "win_rate": (c.get("full_metrics") or {}).get("win_rate"),
+                    "n_trades": (c.get("full_metrics") or {}).get("n_trades"),
+                    "total_pnl_usd": (c.get("full_metrics") or {}).get("total_pnl_usd"),
+                    "passes": (c.get("validation") or {}).get("passes"),
+                }
+                for c in (result.get("leaderboard") or [])[:10]
+            ],
+            "out_dir": str(out_dir),
+            "note": (
+                "Research only — BS model. Read logs/options_search/OPTIONS_PLAN.md. "
+                "Paper before live; never auto-place."
+            ),
+        }
+        print(json.dumps(summary, indent=2), flush=True)
+        return 0
 
     if args.cmd == "session-refresh":
         plan = build_session_refresh_plan(
@@ -408,6 +766,8 @@ def main(argv: list[str] | None = None) -> int:
                 else config.max_option_premium
             ),
             live_path=config.live_portfolio_path,
+            place_without_confirm=bool(config.options_place_without_confirm),
+            bp_usage_pct=float(getattr(config, "bp_usage_pct", 1.0)),
         )
         out_path = args.out or (
             config.config_path.parent / "logs" / "option_review_request.json"
@@ -426,13 +786,20 @@ def main(argv: list[str] | None = None) -> int:
         out_path = args.out or (
             config.config_path.parent / "logs" / "option_review_result.json"
         )
-        record_review_result(review, request=request, path=out_path)
+        record_review_result(
+            review,
+            request=request,
+            path=out_path,
+            place_without_confirm=bool(config.options_place_without_confirm),
+        )
+        recorded = json.loads(Path(out_path).read_text())
         print(
             json.dumps(
                 {
                     "wrote": str(out_path),
-                    "place_allowed": False,
-                    "note": "Review stored. Wait for explicit user confirm before place.",
+                    "place_allowed": recorded.get("place_allowed"),
+                    "human_confirm_required": recorded.get("human_confirm_required"),
+                    "note": recorded.get("note"),
                 },
                 indent=2,
             ),
@@ -514,12 +881,42 @@ def main(argv: list[str] | None = None) -> int:
             wrote = str(prop_path)
         out = proposal.to_dict()
         out["wrote"] = wrote
-        out["note"] = (
-            "PROPOSAL ONLY — place_allowed=false. Use mcp_next_steps with human confirm; "
-            "never auto-place from this command."
-        )
+        if config.options_place_without_confirm and not proposal.blocked:
+            out["note"] = (
+                "PROPOSAL — standing auth ON: after chains/pick/review, agent may "
+                "place_option_order without per-trade yes (Agentic rails still apply). "
+                "This command itself never places."
+            )
+        else:
+            out["note"] = (
+                "PROPOSAL ONLY — place needs confirm or standing auth. "
+                "This command itself never places."
+            )
         print(json.dumps(out, indent=2), flush=True)
         return 2 if proposal.blocked else 0
+
+    if args.cmd == "morning-paper":
+        from agentic_trading.paper.morning import run_morning_paper
+
+        session = getattr(args, "session_dir", None)
+        if session is None:
+            # Default isolated morning session under logs/
+            today = datetime.now(ET).date().isoformat()
+            session = Path(f"logs/paper_morning_{today}")
+        result = run_morning_paper(
+            config,
+            quote_source=str(args.quotes or "yahoo"),
+            use_llm=bool(args.llm),
+            watch_ticks=max(0, int(args.watch_ticks)),
+            trigger=not bool(args.no_trigger),
+            daily_n=max(1, int(args.daily_n)),
+            session_dir=session,
+        )
+        print(json.dumps(result.to_dict(), indent=2), flush=True)
+        md = result.paths.get("morning_plan_md")
+        if md:
+            print(f"\n# plan: {md}", flush=True)
+        return 0
 
     if args.cmd == "research":
         daily_n = max(1, int(args.daily_n))
@@ -551,6 +948,90 @@ def main(argv: list[str] | None = None) -> int:
         elif args.apply:
             out["universe_applied"] = False
         print(json.dumps(out, indent=2), flush=True)
+        return 0
+
+    if args.cmd == "deep-research":
+        ticker = str(args.ticker).upper().strip()
+        peers = None
+        if args.peers:
+            peers = [p.strip() for p in str(args.peers).split(",") if p.strip()]
+        use_llm = True
+        if args.no_llm:
+            use_llm = False
+        elif args.llm:
+            use_llm = True
+        quote_src = str(args.quotes or "yahoo")
+        # Fixture for offline; yahoo/live need yfinance
+        quotes = build_quote_provider("fixture" if quote_src == "fixture" else quote_src)
+        try:
+            memo = run_deep_research(
+                config,
+                ticker,
+                peers=peers,
+                use_llm=use_llm,
+                out_dir=args.out_dir,
+                quote_provider=quotes,
+            )
+        except ValueError as e:
+            print(json.dumps({"error": str(e)}, indent=2), flush=True)
+            return 2
+        print(memo.to_markdown(), flush=True)
+        summary = {
+            "ticker": memo.ticker,
+            "peers": memo.peers,
+            "mode": memo.mode,
+            "verdict": memo.verdict,
+            "conviction": memo.conviction,
+            "one_liner": memo.one_liner,
+            "paths": memo.paths,
+            "note": (
+                "Advisory only — does not write daily_focus or place orders. "
+                "Promote pass/caution names via research --apply-daily after scan."
+            ),
+        }
+        print(json.dumps(summary, indent=2), flush=True)
+        # Non-zero if fail verdict so scripts can gate
+        return 1 if memo.verdict == "fail" else 0
+
+    if args.cmd == "sp500-scan":
+        use_llm = True
+        if args.no_llm:
+            use_llm = False
+        elif args.llm:
+            use_llm = True
+        quote_src = str(args.quotes or "yahoo")
+        result = run_sp500_scan(
+            config,
+            top_n=max(1, int(args.top)),
+            deep_n=max(0, int(args.deep_n)),
+            deep_research=bool(args.deep_research),
+            use_llm=use_llm,
+            bias=str(args.bias or "call"),
+            min_dollar_vol=float(args.min_dollar_vol),
+            rs_lookback=max(2, int(args.rs_lookback)),
+            quote_source=quote_src,
+            out_dir=args.out_dir,
+            allow_remote_universe=not bool(args.no_remote_universe),
+        )
+        print(result.to_markdown(), flush=True)
+        summary = {
+            "universe_source": result.universe_source,
+            "universe_count": result.universe_count,
+            "liquid_count": result.liquid_count,
+            "bias": result.bias,
+            "top": [r.symbol for r in result.top],
+            "survivors": result.survivors,
+            "deep_memos": [
+                {"ticker": m.get("ticker"), "verdict": m.get("verdict")}
+                for m in result.deep_memos
+            ],
+            "paths": result.paths,
+            "note": (
+                "Advisory only — does not write daily_focus or place orders. "
+                "Review survivors, then research --apply-daily if you want them in focus."
+            ),
+        }
+        print(json.dumps(summary, indent=2), flush=True)
         return 0
 
     if args.cmd == "watch":
@@ -653,6 +1134,13 @@ def main(argv: list[str] | None = None) -> int:
                 "max_option_contracts": config.max_option_contracts,
                 "min_dte": config.option_min_dte,
                 "max_dte": config.option_max_dte,
+                "take_profit_pct_low": config.option_take_profit_pct_low,
+                "take_profit_pct_high": config.option_take_profit_pct_high,
+                "stop_loss_pct": config.option_stop_loss_pct,
+                "exit_dte": config.option_exit_dte,
+                "max_open_options": config.max_open_options,
+                "daily_account_halt_pct": config.risk.max_daily_loss_pct,
+                "place_without_confirm": config.options_place_without_confirm,
                 "proposal_path": str(config.option_proposal_path)
                 if config.option_proposal_path
                 else None,

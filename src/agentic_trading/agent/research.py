@@ -10,7 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from agentic_trading.config import AppConfig
-from agentic_trading.market.quotes import FixtureQuoteProvider
+from agentic_trading.market.quotes import FixtureQuoteProvider, QuoteProvider
 
 ET = ZoneInfo("America/New_York")
 
@@ -40,7 +40,8 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-# Liquid pool the LLM/heuristic can pull from when expanding the universe
+# Liquid pool for scan expand (mega + second-tier liquid; no microcaps).
+# Put-day weakest and call-day strongest are ranked inside this set.
 EXPANSION_POOL = [
     "SPY",
     "QQQ",
@@ -70,13 +71,31 @@ EXPANSION_POOL = [
     "UNH",
     "V",
     "MA",
+    # Liquid second tier (2026-07-17 research: expand carefully)
+    "HOOD",
+    "COIN",
+    "PLTR",
+    "UBER",
+    "DIS",
+    "BA",
+    "CRM",
+    "AMD",
+    "ARKK",
+    "XBI",
+    "MU",
+    "TSM",
+    "INTC",
+    "PYPL",
 ]
+
+# Names never used as single-name daily trade focus (indices / pure market proxies)
+INDEX_SKIP = frozenset({"SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "SMH", "XBI", "ARKK"})
 
 
 @dataclass
 class ResearchPick:
     symbol: str
-    action: str  # buy_candidate | avoid | hold_watch
+    action: str  # buy_candidate | put_candidate | avoid | hold_watch
     conviction: float  # 0..1
     thesis: str
     risks: str = ""
@@ -159,9 +178,11 @@ def _rel_strength(
 
 
 def _snapshot_context(
-    config: AppConfig, extra_symbols: list[str] | None = None
+    config: AppConfig,
+    extra_symbols: list[str] | None = None,
+    quote_provider: QuoteProvider | None = None,
 ) -> dict[str, Any]:
-    provider = FixtureQuoteProvider()
+    provider: QuoteProvider = quote_provider or FixtureQuoteProvider()
     symbols = list(
         dict.fromkeys(
             list(config.symbols)
@@ -169,8 +190,10 @@ def _snapshot_context(
             + list(extra_symbols or [])
         )
     )
-    for _ in range(max(15, config.strategy.lookback_bars // 2)):
-        provider.advance(1)
+    # Warm fixture path so RS has variance; live providers ignore advance
+    if isinstance(provider, FixtureQuoteProvider):
+        for _ in range(max(15, config.strategy.lookback_bars // 2)):
+            provider.advance(1)
     quotes = provider.get_quotes(symbols)
     history = provider.get_history(symbols, config.strategy.lookback_bars)
     rows = []
@@ -190,6 +213,7 @@ def _snapshot_context(
             }
         )
     rows.sort(key=lambda r: (r["rs_vs_spy"] is None, -(r["rs_vs_spy"] or -999)))
+    liveish = not isinstance(provider, FixtureQuoteProvider)
     return {
         "universe": symbols,
         "current_config_symbols": config.symbols,
@@ -203,8 +227,13 @@ def _snapshot_context(
         },
         "rows": rows,
         "note": (
-            "Paper fixture quotes are synthetic. Before live, use real quotes/news. "
-            "daily_picks = the only names allowed for NEW entries today (besides managing opens)."
+            (
+                "Quotes from live/yahoo provider — good for morning paper scan. "
+                if liveish
+                else "Paper fixture quotes are synthetic. Prefer --quotes yahoo for morning. "
+            )
+            + "daily_picks = the only names allowed for NEW entries today "
+            "(besides managing opens). market_bias in daily_focus gates long entries."
         ),
     }
 
@@ -214,26 +243,91 @@ def _pick_daily(
     recommended: list[str],
     config: AppConfig,
     n: int = 3,
+    *,
+    market_bias: str = "call",
 ) -> list[str]:
-    """Choose up to n trade names: buy_candidates by conviction, else recommended."""
-    mkt = config.strategy.market_symbol
+    """
+    Choose up to n focus names by morning bias:
+      call → strongest (buy_candidate)
+      put  → weakest liquid single-names (put_candidate)
+      hold → empty (no new risk focus)
+    """
+    mkt = (config.strategy.market_symbol or "SPY").upper()
+    bias = (market_bias or "call").strip().lower()
+    if bias not in ("call", "put", "hold"):
+        bias = "call"
+    if bias == "hold":
+        return []
+
     ordered: list[str] = []
-    for p in sorted(picks, key=lambda x: x.conviction, reverse=True):
-        if p.action == "buy_candidate" and p.symbol and p.symbol != mkt:
-            if p.symbol not in ordered:
-                ordered.append(p.symbol)
+    if bias == "put":
+        # Weakest first: put_candidate sorted by conviction (weakness strength)
+        for p in sorted(picks, key=lambda x: x.conviction, reverse=True):
+            if p.action != "put_candidate" or not p.symbol:
+                continue
+            s = p.symbol.upper()
+            if s == mkt or s in INDEX_SKIP:
+                continue
+            if s not in ordered:
+                ordered.append(s)
+    else:
+        for p in sorted(picks, key=lambda x: x.conviction, reverse=True):
+            if p.action != "buy_candidate" or not p.symbol:
+                continue
+            s = p.symbol.upper()
+            if s == mkt or s in INDEX_SKIP:
+                continue
+            if s not in ordered:
+                ordered.append(s)
+
+    # Fallback fill from recommended (still skip indices)
     for s in recommended:
-        if s != mkt and s not in ordered:
-            ordered.append(s)
+        s = str(s).upper()
+        if s == mkt or s in INDEX_SKIP or s in ordered:
+            continue
+        ordered.append(s)
     for s in config.symbols:
-        if s != mkt and s not in ordered:
-            ordered.append(s)
-    return ordered[: max(1, n)]
+        s = str(s).upper()
+        if s == mkt or s in INDEX_SKIP or s in ordered:
+            continue
+        ordered.append(s)
+
+    n = max(0, int(n))
+    if n <= 0:
+        return []
+    return ordered[:n]
 
 
 def _expanded_from(recommended: list[str], config: AppConfig) -> list[str]:
     cur = set(config.symbols)
     return [s for s in recommended if s not in cur and s != config.strategy.market_symbol]
+
+
+def _rows_ranked_for_bias(
+    rows: list[dict[str, Any]],
+    *,
+    market_bias: str,
+    mkt: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return (strongest_first, weakest_first) tradeable single-name rows."""
+    usable = [
+        r
+        for r in rows
+        if r.get("symbol")
+        and str(r["symbol"]).upper() != mkt.upper()
+        and str(r["symbol"]).upper() not in INDEX_SKIP
+        and r.get("rs_vs_spy") is not None
+    ]
+    strongest = sorted(
+        usable,
+        key=lambda r: float(r.get("rs_vs_spy") or -999),
+        reverse=True,
+    )
+    weakest = sorted(
+        usable,
+        key=lambda r: float(r.get("rs_vs_spy") or 999),
+    )
+    return strongest, weakest
 
 
 def heuristic_research(
@@ -242,50 +336,92 @@ def heuristic_research(
     *,
     daily_n: int = 3,
     expand: bool = True,
+    quote_provider: QuoteProvider | None = None,
+    market_bias: str = "call",
 ) -> ResearchReport:
     extra = EXPANSION_POOL if expand else None
-    ctx = context or _snapshot_context(config, extra)
+    ctx = context or _snapshot_context(config, extra, quote_provider=quote_provider)
     mkt = config.strategy.market_symbol
+    bias = (market_bias or "call").strip().lower()
+    if bias not in ("call", "put", "hold"):
+        bias = "call"
+
     rows = [r for r in ctx["rows"] if r["symbol"] != mkt]
-    rows_sorted = sorted(
-        rows,
-        key=lambda r: (r.get("rs_vs_spy") is None, -(r.get("rs_vs_spy") or -999)),
-    )
+    strongest, weakest = _rows_ranked_for_bias(rows, market_bias=bias, mkt=mkt)
+
     picks: list[ResearchPick] = []
-    for r in rows_sorted[:8]:
-        rs = r.get("rs_vs_spy") or 0.0
+    # Top strong = call candidates
+    for r in strongest[:6]:
+        rs = float(r.get("rs_vs_spy") or 0.0)
         picks.append(
             ResearchPick(
-                symbol=r["symbol"],
-                action="buy_candidate" if rs >= 0 else "hold_watch",
-                conviction=min(0.9, 0.4 + max(0.0, rs) / 10.0),
+                symbol=str(r["symbol"]).upper(),
+                action="buy_candidate",
+                conviction=min(0.95, 0.45 + max(0.0, rs) / 8.0),
                 thesis=(
-                    f"Heuristic RS vs {mkt}: {rs:+.2f}% over lookback; "
-                    f"range change {r.get('range_change_pct')}%."
+                    f"Strong RS vs {mkt}: {rs:+.2f}% (lookback); "
+                    f"range {r.get('range_change_pct')}%. Call-day long candidate."
                 ),
-                risks="Synthetic paper data; no news/fundamentals.",
+                risks="Long equity only when market_bias=call; not for put days.",
+            )
+        )
+    # Top weak = put candidates (liquid single names)
+    for r in weakest[:6]:
+        rs = float(r.get("rs_vs_spy") or 0.0)
+        # conviction = how weak (more negative RS → higher put conviction)
+        picks.append(
+            ResearchPick(
+                symbol=str(r["symbol"]).upper(),
+                action="put_candidate",
+                conviction=min(0.95, 0.45 + max(0.0, -rs) / 8.0),
+                thesis=(
+                    f"Weak RS vs {mkt}: {rs:+.2f}% (lookback); "
+                    f"range {r.get('range_change_pct')}%. Put-day / debit-put focus."
+                ),
+                risks=(
+                    "For long puts / short watch only — do NOT buy equity on put day. "
+                    "Weak names can bounce (momentum crash)."
+                ),
             )
         )
 
-    # Universe: config + top expansion names
-    focus = [mkt] + [p.symbol for p in picks if p.action == "buy_candidate"]
+    # Recommended universe: config + expansion + ranked
     seen: set[str] = set()
     recommended: list[str] = []
-    for s in focus + list(ctx.get("universe") or []) + config.symbols:
-        if s not in seen:
-            seen.add(s)
-            recommended.append(s)
-    recommended = recommended[:16]
-    daily = _pick_daily(picks, recommended, config, n=daily_n)
+    for s in (
+        [mkt]
+        + [p.symbol for p in picks]
+        + list(ctx.get("universe") or [])
+        + list(config.symbols)
+        + list(EXPANSION_POOL)
+    ):
+        su = str(s).upper()
+        if su and su not in seen:
+            seen.add(su)
+            recommended.append(su)
+    recommended = recommended[:24]
+    daily = _pick_daily(
+        picks, recommended, config, n=daily_n, market_bias=bias
+    )
     expanded = _expanded_from(recommended, config)
 
     spy_row = next((r for r in ctx["rows"] if r["symbol"] == mkt), None)
+    chg = spy_row.get("range_change_pct") if spy_row else None
     market_view = (
-        f"{mkt} fixture range change {spy_row.get('range_change_pct')}%; "
-        "heuristic assumes trade only when playbook market filter is green."
+        f"{mkt} range_change {chg}%; market_bias={bias}. "
+        f"call→strongest RS longs; put→weakest liquid put focus; hold→no new risk."
         if spy_row
-        else "No market row."
+        else f"No market row; market_bias={bias}."
     )
+    bias_note = {
+        "call": f"Daily picks = strongest RS (long equity): {', '.join(daily) or '(none)'}.",
+        "put": (
+            f"Daily picks = weakest liquid RS (put/short watch): "
+            f"{', '.join(daily) or '(none)'}. Long equity blocked."
+        ),
+        "hold": "Daily picks empty — hold / no new risk.",
+    }.get(bias, "")
+
     return ResearchReport(
         ts=datetime.now(timezone.utc).isoformat(),
         mode="heuristic",
@@ -294,10 +430,10 @@ def heuristic_research(
         picks=picks,
         recommended_symbols=recommended,
         daily_picks=daily,
-        expanded_candidates=expanded[:8],
+        expanded_candidates=expanded[:10],
         notes=[
-            f"Daily trade list locked to {len(daily)} names: {', '.join(daily)}.",
-            "Heuristic only — use --llm for Grok expansion + narrative.",
+            bias_note,
+            "Heuristic RS scan — use --llm for narrative; risk rails still apply.",
             ctx.get("note", ""),
         ],
     )
@@ -326,12 +462,21 @@ def llm_research(
     *,
     daily_n: int = 3,
     expand: bool = True,
+    quote_provider: QuoteProvider | None = None,
+    market_bias: str = "call",
 ) -> ResearchReport:
     extra = EXPANSION_POOL if expand else None
-    ctx = context or _snapshot_context(config, extra)
+    ctx = context or _snapshot_context(config, extra, quote_provider=quote_provider)
     api_key = os.environ.get("XAI_API_KEY")
     if not api_key:
-        report = heuristic_research(config, ctx, daily_n=daily_n, expand=expand)
+        report = heuristic_research(
+            config,
+            ctx,
+            daily_n=daily_n,
+            expand=expand,
+            quote_provider=quote_provider,
+            market_bias=market_bias,
+        )
         report.notes.insert(
             0,
             "XAI_API_KEY not set — fell back to heuristic.",
@@ -341,7 +486,14 @@ def llm_research(
     try:
         from openai import OpenAI
     except ImportError:
-        report = heuristic_research(config, ctx, daily_n=daily_n, expand=expand)
+        report = heuristic_research(
+            config,
+            ctx,
+            daily_n=daily_n,
+            expand=expand,
+            quote_provider=quote_provider,
+            market_bias=market_bias,
+        )
         report.notes.insert(0, "openai package missing — fell back to heuristic.")
         return report
 
@@ -391,7 +543,13 @@ def llm_research(
         )
         raw = (resp.choices[0].message.content or "").strip()
     except Exception as e:  # noqa: BLE001
-        report = heuristic_research(config, ctx, daily_n=daily_n, expand=expand)
+        report = heuristic_research(
+            config,
+            ctx,
+            daily_n=daily_n,
+            expand=expand,
+            market_bias=market_bias,
+        )
         report.notes.insert(0, f"LLM call failed ({e!r}); fell back to heuristic.")
         return report
 
@@ -419,12 +577,27 @@ def llm_research(
     if not recommended:
         recommended = list(config.symbols)
 
+    # Prefer bias-aware heuristic ranking for daily_picks (LLM is narrative/universe)
+    heur = heuristic_research(
+        config,
+        ctx,
+        daily_n=daily_n,
+        expand=expand,
+        market_bias=market_bias,
+    )
     daily_raw = [
         str(s).upper() for s in (parsed.get("daily_picks") or []) if str(s).strip()
     ]
     daily_raw = [s for s in daily_raw if s != config.strategy.market_symbol]
-    if len(daily_raw) < daily_n:
-        daily = _pick_daily(picks, recommended, config, n=daily_n)
+    bias = (market_bias or "call").strip().lower()
+    if bias == "hold":
+        daily = []
+    elif heur.daily_picks:
+        daily = heur.daily_picks[:daily_n]
+    elif len(daily_raw) < daily_n:
+        daily = _pick_daily(
+            picks, recommended, config, n=daily_n, market_bias=market_bias
+        )
         # prefer model order when partial
         for s in daily_raw:
             if s not in daily:
@@ -470,10 +643,15 @@ def write_daily_focus(
     out_path: Path,
     *,
     daily_n: int = 3,
+    market_bias: str | None = None,
+    market_assess: dict[str, Any] | None = None,
 ) -> Path:
-    """Persist today's 3 trade names for the engine."""
+    """Persist today's trade names + optional morning market_bias for the engine."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     today = datetime.now(ET).date().isoformat()
+    bias = (market_bias or "call").strip().lower()
+    if bias not in ("call", "put", "hold"):
+        bias = "call"
     payload = {
         "date": today,
         "ts": report.ts,
@@ -483,7 +661,20 @@ def write_daily_focus(
         "expanded_candidates": report.expanded_candidates,
         "recommended_symbols": report.recommended_symbols,
         "market_view": report.market_view,
+        "market_bias": bias,
+        "market_assess": market_assess or {},
         "picks": [asdict(p) for p in report.picks if p.symbol in report.daily_picks],
+        "pick_mode": {
+            "call": "strongest_rs_long_candidates",
+            "put": "weakest_liquid_put_watch",
+            "hold": "empty_no_new_risk",
+        }.get(bias, "strongest_rs_long_candidates"),
+        "notes": [
+            "call → daily_picks = strongest RS (long equity ok).",
+            "put → daily_picks = weakest liquid single-names (put/short watch; NO long equity).",
+            "hold → daily_picks empty; no new risk.",
+            "Settlement: trade_when_cash_available=false models cash≠BP lag.",
+        ],
     }
     out_path.write_text(json.dumps(payload, indent=2))
     return out_path

@@ -41,22 +41,28 @@ def bp_is_free(
     *,
     estimated_debit_usd: float,
     min_bp_buffer: float = 5.0,
+    bp_usage_pct: float = 1.0,
 ) -> tuple[bool, list[str]]:
-    """True when buying power can plausibly cover the debit."""
+    """True when usable buying power (BP × bp_usage_pct) can cover the debit."""
     reasons: list[str] = []
     if live is None:
         reasons.append("No live portfolio snapshot — refresh session first.")
         return False, reasons
     bp = float(live.buying_power or 0)
+    usage = max(0.05, min(1.0, float(bp_usage_pct or 1.0)))
+    usable = bp * usage
     need = float(estimated_debit_usd) + min_bp_buffer
-    if bp < need:
+    if usable < need:
         reasons.append(
-            f"Buying power ${bp:.2f} < required ~${need:.2f} "
+            f"Usable buying power ${usable:.2f} ({usage:.0%} of broker BP ${bp:.2f}) "
+            f"< required ~${need:.2f} "
             f"(debit ${estimated_debit_usd:.2f} + buffer ${min_bp_buffer:.2f})."
         )
         return False, reasons
-    if bp < 25:
-        reasons.append(f"Buying power still thin (${bp:.2f}); review may warn.")
+    if usable < 25:
+        reasons.append(
+            f"Usable BP still thin (${usable:.2f} = {usage:.0%} of ${bp:.2f}); review may warn."
+        )
     return True, reasons
 
 
@@ -72,6 +78,7 @@ def build_review_request(
     live: LivePortfolioSnapshot | None = None,
     live_path: Path | None = None,
     place_without_confirm: bool = False,
+    bp_usage_pct: float = 1.0,
 ) -> OptionReviewRequest:
     if live is None and live_path is not None:
         live = load_live_portfolio(live_path)
@@ -82,7 +89,9 @@ def build_review_request(
         raise ValueError("limit_price must be positive (debit per contract in dollars)")
 
     estimated = limit_price * 100.0 * contracts
-    free, free_notes = bp_is_free(live, estimated_debit_usd=estimated)
+    free, free_notes = bp_is_free(
+        live, estimated_debit_usd=estimated, bp_usage_pct=bp_usage_pct
+    )
     block: list[str] = []
     warnings: list[str] = []
 

@@ -42,7 +42,12 @@ After a fresh snapshot, check `bp_free_for_options` from `session-refresh` (defa
 
 **If BP is not free:** report cash/BP and open sell holds; do **not** call `review_option_order` / `place_option_order`. Suggest freeing BP (settle sells, cancel stuck sells, deposit).
 
-**If BP is free** and user wants an options idea:
+**Learning mode (user 2026-07-20; BP override 2026-07-20 live test):** `live.learning_mode: true`, **`bp_usage_pct: 1.0`**.
+**100% of broker buying_power** may fund new live debits (`usable_bp`).
+Paper stocks are primary. Live options: max premium **$50**, **max_open_options: 1**.
+If usable BP &lt; min ($50 default), report and do **not** propose/place.
+
+**If BP is free** (usable BP ≥ min) and user wants an options idea:
 
 1. `python -m agentic_trading propose-option --type call` (or put / `--symbol`).
 2. If proposal `blocked`, stop and explain.

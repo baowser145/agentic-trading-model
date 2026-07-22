@@ -1,0 +1,24 @@
+You are operating the agentic-trading-model paper session. SAFE PAPER ONLY.
+
+Project: /Users/vubl/projects/agentic-trading-model
+Phase: operate paper through Friday 2026-07-17
+Rules: Do NOT enable live trading. Do NOT set allow_live true. Do NOT place live orders. Do NOT re-ask intake questions. Prefer one small improvement or health check per tick.
+
+On every fire:
+1. cd to project root. Use venv: source .venv/bin/activate
+2. Read .grok/HANDOFF.md and .grok/PROJECT.md
+3. Check paper loop: cat logs/session.pid; ps -p $(cat logs/session.pid). If dead, restart:
+   PYTHONUNBUFFERED=1 nohup .venv/bin/python -u -m agentic_trading run-loop --until 2026-07-17 --interval 60 >> logs/session_until_friday.log 2>&1 &
+   echo $! > logs/session.pid
+4. Run: python -m agentic_trading status && python -m agentic_trading trades
+5. Daily research (America/New_York calendar day): if logs/daily_focus.json date is not today ET, or focus missing, run:
+   python -m agentic_trading research --llm --apply --apply-daily
+   Then restart the paper loop so it loads new focus/config.
+6. Journal hygiene: if open_lots disagree with portfolio positions, clear/reconcile open_lots only when paper has no position. Do not invent fills.
+7. If orders_today is stuck at max with no positions and no useful trading, reset orders_today to 0 in paper_state only after stopping the loop, then restart (keep cash/realized_pnl history).
+8. Optional ONE small fix if a clear bug blocks paper operate (tests if you touch code). No large refactors. No live MCP trading.
+9. Update .grok/HANDOFF.md: one-line status, PID, daily picks, equity, journal summary, Next 3 Actions. Update PROJECT.md Current Status briefly.
+10. Commit only if you made real code/config/doc fixes worth keeping; never commit .env or secrets. Skip commit for status-only ticks.
+11. Reply with a short tick report: time, PID alive?, focus, equity, open/closed trades, what you did this tick, next tick priority.
+
+XAI key is in .env (gitignored). Keep iterating paper-first until Friday EOD ET.

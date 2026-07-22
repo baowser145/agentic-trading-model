@@ -80,7 +80,11 @@ broker:
 live:
   portfolio_path: logs/live_portfolio.json
   proposal_path: logs/option_proposal.json
-  max_option_premium: 100.0
+  # Learn-the-process mode (user 2026-07-20): paper primary; live risk capped.
+  learning_mode: true
+  # Fraction of broker buying_power that may fund NEW debits (user live-test: 100%).
+  bp_usage_pct: 1.0
+  max_option_premium: 50.0
   max_option_contracts: 1
   min_dte: 7
   max_dte: 31
@@ -90,11 +94,11 @@ live:
   option_take_profit_pct_high: 0.20  # or up to +20%
   option_stop_loss_pct: 0.10         # sell when premium -10%
   option_exit_dte: 3                 # force manage/exit by 3 DTE
-  # User override 2026-07-17: allow second concurrent long-premium (was 1).
-  max_open_options: 2
+  # Learning: one open long-premium idea at a time (was 2).
+  max_open_options: 1
   # Account day kill (same as risk.max_daily_loss_pct): no new trades if day ≤ -5%
   # Standing user auth (2026-07-17): place Agentic long-premium when playbook gates pass
-  # (no per-trade "yes"). Still: Agentic only, BP free, max_open_options, day halt, review first.
+  # (no per-trade "yes"). Still: Agentic only, usable BP (bp_usage_pct), max_open_options, day halt, review first.
   options_place_without_confirm: true
 logging:
   path: logs/decisions.jsonl

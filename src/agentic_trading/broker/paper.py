@@ -39,9 +39,10 @@ class PaperBroker(Broker):
     Simulated fills with settlement tracking.
 
     - Sells: proceeds tracked as unsettled until T+N (default 1 business day).
-    - Buys: by default use **all cash in the account immediately** after a sale
-      (`trade_when_cash_available=True`) — no 1-day delay when funds are available.
-    - Strict mode (`trade_when_cash_available=False`): buys use settled cash only.
+    - Buys (default **strict**, `trade_when_cash_available=False`): settled cash only.
+      Mirrors live RH observation (2026-07-17): cash can show full after option
+      closes while buying_power lags — do not thrash-redeploy unsettled proceeds.
+    - Loose mode (`trade_when_cash_available=True`): any cash funds buys same day.
     """
 
     def __init__(
